@@ -43,5 +43,9 @@
 # Visual Studio files
 /.vs/*
 /.vscode/*
+
 # Agent Logs
 /agentLog/*
+
+# Shortcut Links
+*.lnk
