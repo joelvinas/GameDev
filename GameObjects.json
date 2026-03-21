@@ -1,0 +1,915 @@
+{
+    "Elements": [
+        {
+            "Name": "Blood",
+            "Color": "Red",
+            "StrongAgainst": [
+                "Arcane"
+            ],
+            "WeakAgainst": [
+                "Mechanical"
+            ]
+        },
+        {
+            "Name": "Arcane",
+            "Color": "Purple",
+            "StrongAgainst": [
+                "Physical"
+            ],
+            "WeakAgainst": [
+                "Blood"
+            ]
+        },
+        {
+            "Name": "Physical",
+            "Color": "Yellow",
+            "StrongAgainst": [
+                "Nature"
+            ],
+            "WeakAgainst": [
+                "Arcane"
+            ]
+        },
+        {
+            "Name": "Nature",
+            "Color": "Green",
+            "StrongAgainst": [
+                "Water"
+            ],
+            "WeakAgainst": [
+                "Physical"
+            ]
+        },
+        {
+            "Name": "Water",
+            "Color": "Blue",
+            "StrongAgainst": [
+                "Fire"
+            ],
+            "WeakAgainst": [
+                "Nature"
+            ]
+        },
+        {
+            "Name": "Fire",
+            "Color": "Orange",
+            "StrongAgainst": [
+                "Mechanical"
+            ],
+            "WeakAgainst": [
+                "Water"
+            ]
+        },
+        {
+            "Name": "Mechanical",
+            "Color": "Silver",
+            "StrongAgainst": [
+                "Blood"
+            ],
+            "WeakAgainst": [
+                "Fire"
+            ]
+        }
+    ],
+    "Raw Resources": [
+        {
+            "Name": "Birch",
+            "Type": "Wood",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Copper",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Tin",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Iron",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Gold",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Silver",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Platinum",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Coal",
+            "Type": "Ore",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Granite",
+            "Type": "Stone",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Berries",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Meat",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Fish",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Bread",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cheese",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Wine",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Ale",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Milk",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Eggs",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Honey",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Salt",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Sugar",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Spices",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Herbs",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Vegetables",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Fruit",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Grains",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Flour",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Leather",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cloth",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Rope",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Paper",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Ink",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Glass",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Brick",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cement",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Steel",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Bronze",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Iron",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Gold",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Silver",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Platinum",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Coal",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Granite",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Berries",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Meat",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Fish",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Bread",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cheese",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Wine",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Ale",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Milk",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Eggs",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Honey",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Salt",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Sugar",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Spices",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Herbs",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Vegetables",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Fruit",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Grains",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Flour",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Leather",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cloth",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Rope",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Paper",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Ink",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Glass",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Brick",
+            "Type": "Food",
+            "Quality": 1.0
+        },
+        {
+            "Name": "Cement",
+            "Type": "Food",
+            "Quality": 1.0,
+            "Durability": 100,
+            "Complexity": 1
+        }
+    ],
+    "Tools": [
+        {
+            "Name": "Stone Axe",
+            "Trade": [
+                "Gatherer"
+            ],
+            "Efficiency": 1.5,
+            "Durability": 100,
+            "Complexity": 1
+        }
+    ],
+    "Trades": [
+        {
+            "Name": "Lumberjack",
+            "Type": "Gatherer",
+            "Produce": [
+                {
+                    "Item": "Stick",
+                    "Min": 1,
+                    "Max": 10
+                },
+                {
+                    "Item": "Wood",
+                    "Min": 1,
+                    "Max": 3
+                }
+            ],
+            "Consume": "Stone Axe",
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Cook",
+            "Type": "Crafter",
+            "Produce": [
+                "Cooked Food"
+            ],
+            "Consume": [
+                "Food",
+                "Wood"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Miner",
+            "Type": "Gatherer",
+            "Produce": [
+                "Stone",
+                "Ore"
+            ],
+            "Consume": [
+                "Stone Axe"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Farmer",
+            "Type": "Gatherer",
+            "Produce": [
+                "Food"
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Alchemist",
+            "Type": "Crafter",
+            "Produce": [
+                "Potion"
+            ],
+            "Consume": [
+                "Food",
+                "Wood"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Builder",
+            "Type": "Crafter",
+            "Produce": [
+                "Building"
+            ],
+            "Consume": [
+                "Stone",
+                "Wood"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Blacksmith",
+            "Type": "Crafter",
+            "Produce": [
+                "Tool",
+                "Weapon"
+            ],
+            "Consume": [
+                "Iron"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Tailor",
+            "Type": "Crafter",
+            "Produce": [
+                "Cloth"
+            ],
+            "Consume": [
+                "Fiber"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Carpenter",
+            "Type": "Crafter",
+            "Produce": [
+                "Lumber"
+            ],
+            "Consume": [
+                "Wood"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Stonemason",
+            "Type": "Crafter",
+            "Produce": [
+                "Stone"
+            ],
+            "Consume": [
+                "Stone"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Fisherman",
+            "Type": "Gatherer",
+            "Produce": [
+                "Fish"
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Hunter",
+            "Type": "Gatherer",
+            "Produce": [
+                {
+                    "Item": "Raw Meat",
+                    "Min": 1,
+                    "Max": 5
+                },
+                {
+                    "Item": "Hide",
+                    "Min": 0,
+                    "Max": 1
+                },
+                {
+                    "Item": "Pelt",
+                    "Min": 0,
+                    "Max": 1
+                },
+                {
+                    "Item": "Bone",
+                    "Min": 0,
+                    "Max": 3
+                }
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Baker",
+            "Type": "Crafter",
+            "Produce": [
+                "Bread"
+            ],
+            "Consume": [
+                "Grain"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Brewer",
+            "Type": "Crafter",
+            "Produce": [
+                "Ale"
+            ],
+            "Consume": [
+                "Grain"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Winemaker",
+            "Type": "Crafter",
+            "Produce": [
+                "Wine"
+            ],
+            "Consume": [
+                "Berries"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Dairy Farmer",
+            "Type": "Gatherer",
+            "Produce": [
+                "Milk"
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Cheese Maker",
+            "Type": "Crafter",
+            "Produce": [
+                "Cheese"
+            ],
+            "Consume": [
+                "Milk"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Butter Maker",
+            "Type": "Crafter",
+            "Produce": [
+                "Butter"
+            ],
+            "Consume": [
+                "Milk"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Egg Collector",
+            "Type": "Gatherer",
+            "Produce": [
+                "Eggs"
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Shepherd",
+            "Type": "Gatherer",
+            "Produce": [
+                "Wool"
+            ],
+            "Consume": [
+                "Food"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Leatherworker",
+            "Type": "Crafter",
+            "Produce": [
+                "Leather"
+            ],
+            "Consume": [
+                "Pelt",
+                "Hide"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Weaver",
+            "Type": "Crafter",
+            "Produce": [
+                "Cloth"
+            ],
+            "Consume": [
+                "Wool"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Rope Maker",
+            "Type": "Crafter",
+            "Produce": [
+                "Rope"
+            ],
+            "Consume": [
+                "Fiber"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Potter",
+            "Type": "Crafter",
+            "Produce": [
+                "Pot"
+            ],
+            "Consume": [
+                "Clay"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Scribe",
+            "Type": "Crafter",
+            "Produce": [
+                "Scroll"
+            ],
+            "Consume": [
+                "Paper"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Calligrapher",
+            "Type": "Crafter",
+            "Produce": [
+                "Scroll"
+            ],
+            "Consume": [
+                "Ink"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Glass Blower",
+            "Type": "Crafter",
+            "Produce": [
+                "Glass"
+            ],
+            "Consume": [
+                "Sand"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Brick Maker",
+            "Type": "Crafter",
+            "Produce": [
+                "Brick"
+            ],
+            "Consume": [
+                "Clay"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Armorer",
+            "Type": "Crafter",
+            "Produce": [
+                "Armor"
+            ],
+            "Consume": [
+                "Iron",
+                "Leather"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Weaponsmith",
+            "Type": "Crafter",
+            "Produce": [
+                "Weapon"
+            ],
+            "Consume": [
+                "Iron",
+                "Wood"
+            ],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Quartermaster",
+            "Type": "Leader",
+            "Produce": [],
+            "Consume": [],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        },
+        {
+            "Name": "Guard",
+            "Type": "Defender",
+            "Produce": [],
+            "Consume": [],
+            "Amount": 10,
+            "Cost": 100,
+            "TimeOfDay": "Daylight"
+        }
+    ],
+    "Housing": [
+        {
+            "Name": "Housing 1",
+            "Capacity": 10,
+            "Cost": 100
+        }
+    ],
+    "Territory": [
+        {
+            "Name": "Territory 1",
+            "Size": 100,
+            "Cost": 100
+        }
+    ],
+    "Factions": [
+        {
+            "Name": "Faction 1",
+            "Culture": {
+                "aggression": 0.5,
+                "innovation": 0.5,
+                "collectivism": 0.5
+            }
+        }
+    ],
+    "Members": [
+        {
+            "Name": "Member 1",
+            "Culture": {
+                "aggression": 0.5,
+                "innovation": 0.5,
+                "collectivism": 0.5
+            },
+            "JobRole": "Gatherer",
+            "AIState": "Idle",
+            "CurrentTool": "Tool 1"
+        }
+    ]
+}
