@@ -12,5 +12,6 @@ exit /b 1
 
 :M1
 call %VCVARS% x64
-cl Agent.cpp /EHsc /std:c++17
-Agent.exe
+cd /d "%~dp0\.."
+cl src\Agent.cpp /Iinclude /EHsc /std:c++17 /Febin\Agent.exe /Foobj\
+bin\Agent.exe

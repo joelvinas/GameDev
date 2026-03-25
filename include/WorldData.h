@@ -1,9 +1,10 @@
 #pragma once
+#include <cmath>
+#include <string>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
 
 // Time and Day/Night Cycle Helpers
 float getLightLevel(int hour) {
@@ -31,7 +32,7 @@ float getLightLevel(float hour, float latitude, int dayOfYear) {
     // 4. The Solar Zenith Formula
     // This combines the time of day, tilt, and position on the planet
     float lightIntensity = (sin(latRad) * sin(declination)) + 
-                           (cos(latRad) * cos(declination) * cos(hourAngle));
+                        (cos(latRad) * cos(declination) * cos(hourAngle));
 
     // Clamp between -1.0 (dead of night) and 1.0 (high noon)
     // or 0.0 to 1.0 if you just want brightness.

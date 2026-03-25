@@ -129,8 +129,10 @@ public:
     int commuteDistanceToWork;
     int commuteDistanceToHome;
 
-    AgentState currentState;
     AgentState previousState;
+    AgentState currentState;
+    AgentState nextState;
+
     int commuteProgress;
     bool requiresDaylight;
 
@@ -150,30 +152,31 @@ public:
 
     std::map<string, int> currentTripInventory;
     std::map<string, int> grandTotalInventory;
-    
-    void HandleSleeping() {
-        // Handle sleep logic
-        // 1. Update Vitals
-        tiredness += (wakeThreshold / sleepDuration);
-        stomach -= 0.5f; // Sleep makes them slightly hungry over time
 
-        // 2. Calculate and Display Progress
-        double restedPct = (tiredness / wakeThreshold) * 100;
-        std::cout << "Sleeping... (Restfulness: " << std::min(100, (int)round(restedPct)) << "%)";
-
-        // 3. Transition Logic
-        if (tiredness >= wakeThreshold) {
-            tiredness = wakeThreshold;
-            currentState.category = StateCategory::WakingUp;
-
-            workSatisfaction = 0.0f; // Reset work satisfaction for a new day
-            std::cout << " -> Waking up fully rested!";
-        }
-        
-        std::cout << "\n";
-
+    // WakingUp,
+    // Eating,
+    // Commuting,
+    // Working,
+    // Relaxing,
+    // Sleeping    
+    void HandleWakingUp(int currentHour) {
+        // This function can be used for any additional effects or checks related to waking up if needed in the future
+        // For now, the main tick loop handles the transition logic for waking up and deciding what to do next
+        if (stomach < stomachThreshold) {
+            HandleEating(currentHour);
+        } else if (requiresDaylight && !isDaytime(currentHour)) {
+            currentState.category = StateCategory::Relaxing;
+            tiredness -= 1.0f;
+            stomach -= 0.2f;
+        } else {
+            currentState.category = StateCategory::Commuting;
+            currentState.commuteInfo.origin = Destination::Home;
+            currentState.commuteInfo.destination = Destination::Work;   
+            commuteProgress = 0;
+            cout << "Not hungry. Heading out to work. ";
+        }        
     };
-    
+
     void HandleEating(int currentHour) {
         // This function is now simplified since the main tick loop handles the actual eating logic
         // It can be used for any additional effects or checks related to eating if needed in the future
@@ -197,7 +200,7 @@ public:
         cout << "Stomach is full at " << stomachMax << ". Food stores left: " << foodInventory << "\n";
         currentState = previousState; // Return to previous state after eating
         return;
-    }
+    }  
 
     void HandleCommuting() {
         // This function can be used for any additional effects or checks related to commuting if needed in the future
@@ -244,6 +247,121 @@ public:
 
         }  
     }
+
+    bool HandleWorking(int currentHour) {
+        // This function can be used for any additional effects or checks related to working if needed in the future
+        // For now, the main tick loop handles the actual working logic and resource gathering
+        if(currentState.commuteInfo.origin == Destination::Work) {
+            // Work consumes 1 tiredness and 1 stomach per hour
+            tiredness -= 1.0f;
+            stomach -= 1.0f; 
+
+            cout << "Working hard as a " << jobRole << " | ";
+
+            // Simulate gathering resources based on job role and skills
+            {
+                const auto& trades = getTradeData();
+                auto it = trades.find(jobRole);
+                std::string producedStr = "";
+                if (it != trades.end()) {
+                    for (const auto& prod : it->second.produce) {
+                        int amt = randomInt(prod.minAmount, prod.maxAmount);
+                        if (amt > 0) {
+                            currentTripInventory[prod.name] += amt;
+                            if (!producedStr.empty()) producedStr += ", ";
+                            producedStr += std::to_string(amt) + " " + prod.name;
+                        }
+                    }
+                }
+                if (!producedStr.empty()) {
+                    cout << "Gathered: " << producedStr << " | ";
+                }
+            }                    
+
+            workSatisfaction += 1.0f;
+            cout << "Satisfaction: " 
+                << setprecision(1) << workSatisfaction << "/" << workSatisfactionThreshold 
+                << " | Stomach: " << stomach << " | Tiredness: " << tiredness;              
+        }
+
+        if (requiresDaylight && !isDaytime(currentHour)) {
+            cout << "\n";
+            cout << "It's too dark to continue gathering. Heading home for the day. ";
+            currentState.category = StateCategory::Commuting;
+            currentState.commuteInfo.origin = Destination::Work;
+            currentState.commuteInfo.destination = Destination::Home;
+            commuteProgress = 0;
+            return true; // Return true to indicate we changed state and need to reprocess the new state immediately
+        }
+
+        if (stomach < stomachThreshold) {
+            HandleEating(currentHour);
+            return true; // Return true to indicate we changed state and need to reprocess the new state immediately
+        }
+
+        // Check if it's time to go home based on satisfaction     
+        if (workSatisfaction >= workSatisfactionThreshold) {
+            previousState = currentState;
+            currentState.category = StateCategory::Commuting;
+            currentState.commuteInfo.origin = Destination::Work;
+            currentState.commuteInfo.destination = Destination::Home;
+            commuteProgress = 0;
+            cout << "\n";
+            cout << "Satisfied with today's work! Heading home.";
+            return false;
+        }
+        cout << "\n";
+        return false; // No state change, continue working
+     };
+
+    void HandleRelaxing(int currentHour) {
+        // This function can be used for any additional effects or checks related to relaxing if needed in the future
+        tiredness -= 1.0f;
+        stomach -= 0.2f;
+
+        if (requiresDaylight && !isDaytime(currentHour) && stomach >= stomachThreshold) {
+            cout << "It's still dark out. Relaxing at home until dawn...\n";            
+        }
+        else if (requiresDaylight && isDaytime(currentHour) && stomach >= stomachThreshold) {
+            currentState.category = StateCategory::Commuting;
+            currentState.commuteInfo.origin = Destination::Home;
+            currentState.commuteInfo.destination = Destination::Work;
+            commuteProgress = 0;
+            cout << "Sun is up! I can head out to work.\n";          
+        }
+        else if (requiresDaylight && !isDaytime(currentHour) && stomach < stomachThreshold) {
+            cout << "It's still dark out and I'm hungry. Eating at home while I wait for daylight...\n";            
+            currentState.category = StateCategory::Eating;
+            HandleEating(currentHour);
+        }
+        else {    
+            cout << "Relaxing at home. Unwinding from the day. (Tiredness: " << tiredness << ")\n";
+        }
+     };
+
+    void HandleSleeping() {
+        // Handle sleep logic
+        // 1. Update Vitals
+        tiredness += (wakeThreshold / sleepDuration);
+        stomach -= 0.5f; // Sleep makes them slightly hungry over time
+
+        // 2. Calculate and Display Progress
+        double restedPct = (tiredness / wakeThreshold) * 100;
+        std::cout << "Sleeping... (Restfulness: " << std::min(100, (int)round(restedPct)) << "%)";
+
+        // 3. Transition Logic
+        if (tiredness >= wakeThreshold) {
+            tiredness = wakeThreshold;
+            currentState.category = StateCategory::WakingUp;
+
+            workSatisfaction = 0.0f; // Reset work satisfaction for a new day
+            std::cout << " -> Waking up fully rested!";
+        }
+        
+        std::cout << "\n";
+
+    };
+    
 
     Agent(string name) : name(name) {
         vector<string> roles = {"Lumberjack", "Hunter"};
@@ -311,7 +429,6 @@ process_state:
                 goto process_state;
             } else {
                 cout << "Exhausted but already commuting home. Can't sleep until we get there... ";
-                 // HandleCommuting(); // Process the commute hour as normal, which will eventually lead to sleeping when they arrive home
             }
         }
 
@@ -324,91 +441,24 @@ process_state:
         // 4. State Machine logic for Awake Agent
         switch (currentState.category) {
             case StateCategory::WakingUp:
-                if (stomach < stomachThreshold) {
-                    HandleEating(currentHour);
-                    goto process_state;
-                } else if (requiresDaylight && !isDaytime(currentHour)) {
-                    cout << "It's still dark out. Relaxing at home until dawn...\n";
-                    tiredness -= 1.0f;
-                    stomach -= 0.2f;
-                } else {
-                    currentState.category = StateCategory::Commuting;
-                    currentState.commuteInfo.origin = Destination::Home;
-                    currentState.commuteInfo.destination = Destination::Work;   
-                    commuteProgress = 0;
-                    cout << "Not hungry. Heading out to work. ";
-                    goto process_state;
-                }
+                HandleWakingUp(currentHour);
+                goto process_state;
                 break;
-                
             case StateCategory::Commuting:
                 HandleCommuting();
                 break;      
                 
             case StateCategory::Working:
-                if(currentState.commuteInfo.origin == Destination::Work) {
-                    // Work consumes 1 tiredness and 1 stomach per hour
-                    tiredness -= 1.0f;
-                    stomach -= 1.0f; 
-
-                    cout << "Working hard as a " << jobRole << " | ";
-
-                    // Simulate gathering resources based on job role and skills
-                    {
-                        const auto& trades = getTradeData();
-                        auto it = trades.find(jobRole);
-                        std::string producedStr = "";
-                        if (it != trades.end()) {
-                            for (const auto& prod : it->second.produce) {
-                                int amt = randomInt(prod.minAmount, prod.maxAmount);
-                                if (amt > 0) {
-                                    currentTripInventory[prod.name] += amt;
-                                    if (!producedStr.empty()) producedStr += ", ";
-                                    producedStr += std::to_string(amt) + " " + prod.name;
-                                }
-                            }
-                        }
-                        if (!producedStr.empty()) {
-                            cout << "Gathered: " << producedStr << " | ";
-                        }
-                    }                    
-
-                    workSatisfaction += 1.0f;
-                    cout << "Satisfaction: " 
-                        << setprecision(1) << workSatisfaction << "/" << workSatisfactionThreshold 
-                        << " | Stomach: " << stomach << " | Tiredness: " << tiredness;              
-                }
-
-                if (requiresDaylight && !isDaytime(currentHour)) {
-                    cout << "\n";
-                    cout << "It's too dark to continue gathering. Heading home for the day. ";
-                    currentState.category = StateCategory::Commuting;
-                    currentState.commuteInfo.origin = Destination::Work;
-                    currentState.commuteInfo.destination = Destination::Home;
-                    commuteProgress = 0;
+                if (HandleWorking(currentHour)) {
                     goto process_state;
                 }
-                if (stomach < stomachThreshold) {
-                    HandleEating(currentHour);
-                    goto process_state;
-                }                
-                // Check if it's time to go home based on satisfaction     
-                if (workSatisfaction >= workSatisfactionThreshold) {
-                    previousState = currentState;
-                    currentState.category = StateCategory::Commuting;
-                    currentState.commuteInfo.origin = Destination::Work;
-                    currentState.commuteInfo.destination = Destination::Home;
-                    commuteProgress = 0;
-                    cout << "\n";
-                    cout << "Satisfied with today's work! Heading home.";
+                else {
+                    break;
                 }
-                cout << "\n";
                 break;
                 
             case StateCategory::Relaxing:
-                tiredness -= 1.0f;
-                stomach -= 0.2f;
-                cout << "Relaxing at home. Unwinding from the day. (Tiredness: " << tiredness << ")\n";
+                HandleRelaxing(currentHour);
                 break;
                 
             default:
