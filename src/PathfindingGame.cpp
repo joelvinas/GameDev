@@ -1,7 +1,6 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-
 #include <vector>
 #include <queue>
 #include <cmath>
@@ -29,13 +28,13 @@ struct Node {
 };
 
 // Global State
-Point squishPos = { 10, 10 }; // Grid coordinates
+Point playerPos = { 10, 10 }; // Grid coordinates
 Point targetPos = { 10, 10 };
 std::vector<Point> currentPath;
 bool isMoving = false;
 float moveProgress = 0.0f;
 size_t currentPathIndex = 0;
-Point realSquishPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SIZE / 2 };
+Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SIZE / 2 };
 
 struct Agent {
     std::string name;
@@ -235,13 +234,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
 
     // Ensure start is valid
-    squishPos = { 10, 10 };
+    playerPos = { 10, 10 };
     if (!isPassable(10, 10)) {
         grid[10][10].type = GRASS;
         grid[10][10].altitude = 0.5f;
         grid[10][10].r = 34; grid[10][10].g = 139; grid[10][10].b = 34;
     }
-    targetPos = squishPos;
+    targetPos = playerPos;
 
     // Initialize NPCs
     std::vector<std::string> names = {"Andy", "Belle", "Curtis"};
@@ -281,7 +280,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
                 int targetX = (int)(px / CELL_SIZE);
                 int targetY = (int)(py / CELL_SIZE);
                 if (targetX >= 0 && targetX < GRID_SIZE && targetY >= 0 && targetY < GRID_SIZE && isPassable(targetX, targetY)) {
-                    std::vector<Point> newPath = findPath(squishPos, { targetX, targetY });
+                    std::vector<Point> newPath = findPath(playerPos, { targetX, targetY });
                     if (!newPath.empty()) {
                         targetPos = { targetX, targetY };
                         currentPath = newPath;
@@ -308,12 +307,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     if (isMoving && currentPathIndex < currentPath.size() - 1) {
         float dist = getDistance(currentPath[currentPathIndex], currentPath[currentPathIndex + 1]);
         if (dist == 0.0f) dist = 1.0f;
-        moveProgress += deltaTime * 5.0f * (1.0f / getMoveCost(squishPos.x, squishPos.y)) / dist; 
+        moveProgress += deltaTime * 5.0f * (1.0f / getMoveCost(playerPos.x, playerPos.y)) / dist; 
 
         if (moveProgress >= 1.0f) {
             moveProgress = 0.0f;
             currentPathIndex++;
-            squishPos = currentPath[currentPathIndex];
+            playerPos = currentPath[currentPathIndex];
             if (currentPathIndex >= currentPath.size() - 1) {
                 isMoving = false;
                 currentPath.clear();
@@ -334,12 +333,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             float rx = getSplineVal((float)p0.x, (float)p1.x, (float)p2.x, (float)p3.x, moveProgress);
             float ry = getSplineVal((float)p0.y, (float)p1.y, (float)p2.y, (float)p3.y, moveProgress);
 
-            realSquishPos.x = (int)(rx * CELL_SIZE + CELL_SIZE / 2);
-            realSquishPos.y = (int)(ry * CELL_SIZE + CELL_SIZE / 2);
+            realPlayerPos.x = (int)(rx * CELL_SIZE + CELL_SIZE / 2);
+            realPlayerPos.y = (int)(ry * CELL_SIZE + CELL_SIZE / 2);
         }
     } else {
-        realSquishPos.x = squishPos.x * CELL_SIZE + CELL_SIZE / 2;
-        realSquishPos.y = squishPos.y * CELL_SIZE + CELL_SIZE / 2;
+        realPlayerPos.x = playerPos.x * CELL_SIZE + CELL_SIZE / 2;
+        realPlayerPos.y = playerPos.y * CELL_SIZE + CELL_SIZE / 2;
     }
 
     // Update NPCs
@@ -432,18 +431,18 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     }
 
     SDL_SetRenderDrawColor(as->renderer, 255, 0, 0, 255); 
-    DrawFilledCircle(as->renderer, targetPos.x * CELL_SIZE + CELL_SIZE / 2.0f, targetPos.y * CELL_SIZE + CELL_SIZE / 2.0f, SQUISH_RADIUS * 0.5f);
+    DrawFilledCircle(as->renderer, targetPos.x * CELL_SIZE + CELL_SIZE / 2.0f, targetPos.y * CELL_SIZE + CELL_SIZE / 2.0f, PLAYER_RADIUS * 0.5f);
 
     SDL_SetRenderDrawColor(as->renderer, 0, 0, 255, 255);
-    DrawFilledCircle(as->renderer, (float)realSquishPos.x, (float)realSquishPos.y, SQUISH_RADIUS);
+    DrawFilledCircle(as->renderer, (float)realPlayerPos.x, (float)realPlayerPos.y, PLAYER_RADIUS);
 
     // Draw NPCs
     for (const auto& agent : npcs) {
         SDL_SetRenderDrawColor(as->renderer, 255, 165, 0, 255); // Orange
-        DrawFilledCircle(as->renderer, (float)agent.realPos.x, (float)agent.realPos.y, SQUISH_RADIUS);
+        DrawFilledCircle(as->renderer, (float)agent.realPos.x, (float)agent.realPos.y, PLAYER_RADIUS);
         
         SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
-        SDL_RenderDebugText(as->renderer, (float)agent.realPos.x - 10, (float)agent.realPos.y + SQUISH_RADIUS + 2, agent.name.c_str());
+        SDL_RenderDebugText(as->renderer, (float)agent.realPos.x - 10, (float)agent.realPos.y + PLAYER_RADIUS + 2, agent.name.c_str());
     }
     
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
