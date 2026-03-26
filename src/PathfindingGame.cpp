@@ -8,9 +8,12 @@
 #include <chrono>
 #include <algorithm>
 #include <random>
+#include <string>
+#include <cstdlib>
+#include <fstream>
 
 // Constants
-const int GIVEN_SEED = 65100292;
+const int GIVEN_SEED = 0; //65100292;
 const int WINDOW_WIDTH = 1280;
 const int WINDOW_HEIGHT = 720;
 const int MAP_SIZE = 900;
@@ -18,6 +21,7 @@ const int GRID_SIZE = 60; // Doubled resolution for better procedural map
 const int CELL_SIZE = MAP_SIZE / GRID_SIZE; // 12
 const float SQUISH_RADIUS = 5.0f;
 const float MUD_SPEED = 2.0f;
+const char* MAP_FILENAME = "GameMap.map";
 
 // Terrain Config
 const float TERRAIN_NOISE_SCALE = 3.0f;       // Higher = more varied/rugged, Lower = flatter/smoother [3]
@@ -27,7 +31,7 @@ const float MOUNTAIN_LEVEL = 0.75f;           // Altitude above this is mountain
 const int TERRAIN_OCTAVES = 4;                // More octaves = more high-frequency detail (more jagged) [4]
 
 // New Terrain Config for Trees
-const float TREE_DENSITY = 0.5f;       // 0.0 to 1.0 (Higher = larger/denser forests)
+const float TREE_DENSITY = 0.4f;       // 0.0 to 1.0 (Higher = larger/denser forests)
 const float TREE_NOISE_SCALE = 5.0f;   // Scale of the forest patches
 const float TREE_LINE = 0.7f;          // Max altitude for trees (below mountains)
 
@@ -63,6 +67,20 @@ float moveProgress = 0.0f;
 size_t currentPathIndex = 0;
 Cell grid[GRID_SIZE][GRID_SIZE];
 Point realSquishPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SIZE / 2 };
+
+struct Agent {
+    std::string name;
+    Point gridPos;
+    Point realPos;
+    std::vector<Point> currentPath;
+    bool isMoving = false;
+    float moveProgress = 0.0f;
+    size_t currentPathIndex = 0;
+    float waitTimer = 0.0f;
+    float waitDuration = 0.0f;
+};
+std::vector<Agent> npcs;
+
 unsigned currentSeed = 0;
 char seedString[64] = "";
 
@@ -212,6 +230,45 @@ float fractalNoise(float x, float y, unsigned seed, int octaves = 4) {
     return (normalized + 1.0f) * 0.5f; // scale to 0.0 to 1.0
 }
 
+
+std::string GetMapFilePath() {
+    const char* basePath = SDL_GetBasePath();
+    std::string path;
+    if (basePath) {
+        path = std::string(basePath) + MAP_FILENAME;
+        SDL_free((void*)basePath);
+    } else {
+        path = MAP_FILENAME; // Fallback
+    }
+    return path;
+}
+
+// Save and Load Map
+void SaveMap() {
+    std::string path = GetMapFilePath();
+    std::ofstream outFile(path, std::ios::binary);
+    if (outFile.is_open()) {
+        // Write the entire grid array to disk
+        outFile.write(reinterpret_cast<const char*>(grid), sizeof(grid));
+        outFile.close();
+        SDL_Log("Map saved successfully to %s", path.c_str());
+    }
+}
+
+bool LoadMap() {
+    std::string path = GetMapFilePath();
+    std::ifstream inFile(path, std::ios::binary);
+    if (inFile.is_open()) {
+        // Read the bytes back into the grid array
+        inFile.read(reinterpret_cast<char*>(grid), sizeof(grid));
+        inFile.close();
+        SDL_Log("Map loaded successfully from %s", path.c_str());
+        return true;
+    }
+    return false;
+}
+
+// Initialize Game
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -230,91 +287,98 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     currentSeed = seed;
     SDL_snprintf(seedString, sizeof(seedString), "Seed: %u", currentSeed);
 
-    for (int y = 0; y < GRID_SIZE; y++) {
-        for (int x = 0; x < GRID_SIZE; x++) {
-            float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
-            float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
-            float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
-            alt = std::max(0.0f, std::min(1.0f, alt)); // Clamp altitude
-            float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed+1, TERRAIN_OCTAVES);
+    if (!LoadMap()) {
+        SDL_Log("No save found. Generating new map...");
+        // Generate Terrain
+        for (int y = 0; y < GRID_SIZE; y++) {
+            for (int x = 0; x < GRID_SIZE; x++) {
+                float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
+                float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
+                float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
+                alt = std::max(0.0f, std::min(1.0f, alt)); // Clamp altitude
+                float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed+1, TERRAIN_OCTAVES);
 
-            Cell& cell = grid[y][x];
-            cell.altitude = alt;
+                Cell& cell = grid[y][x];
+                cell.altitude = alt;
 
-            if (alt < WATER_LEVEL) {
-                cell.type = WATER;
-                // Deep blue to light blue
-                float t = alt / WATER_LEVEL;
-                cell.r = 0;
-                cell.g = (Uint8)(t * 100);
-                cell.b = (Uint8)(100 + t * 155);
-            } else if (alt > MOUNTAIN_LEVEL) {
-                cell.type = MOUNTAIN;
-                // Grey to White
-                float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
-                Uint8 c = (Uint8)(100 + t * 155);
-                cell.r = c; cell.g = c; cell.b = c;
-            } else {
-                cell.type = GRASS;
-                // Green shades
-                float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
-                cell.r = 34 + (Uint8)(t * 20);
-                cell.g = 100 + (Uint8)(t * 50);
-                cell.b = 34 + (Uint8)(t * 20);
+                if (alt < WATER_LEVEL) {
+                    cell.type = WATER;
+                    // Deep blue to light blue
+                    float t = alt / WATER_LEVEL;
+                    cell.r = 0;
+                    cell.g = (Uint8)(t * 100);
+                    cell.b = (Uint8)(100 + t * 155);
+                } else if (alt > MOUNTAIN_LEVEL) {
+                    cell.type = MOUNTAIN;
+                    // Grey to White
+                    float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
+                    Uint8 c = (Uint8)(100 + t * 155);
+                    cell.r = c; cell.g = c; cell.b = c;
+                } else {
+                    cell.type = GRASS;
+                    // Green shades
+                    float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
+                    cell.r = 34 + (Uint8)(t * 20);
+                    cell.g = 100 + (Uint8)(t * 50);
+                    cell.b = 34 + (Uint8)(t * 20);
 
-                // // Add procedural trees & swamp
-                for (int y = 0; y < GRID_SIZE; y++) {
-                    for (int x = 0; x < GRID_SIZE; x++) {
-                        float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                        float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                        float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
-                        alt = std::max(0.0f, std::min(1.0f, alt));
-                        
-                        // 1. Generate Moisture and Forest density noise
-                        float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed + 1, TERRAIN_OCTAVES);
-                        float forestNoise = fractalNoise((float)x / GRID_SIZE * TREE_NOISE_SCALE, 
-                                                        (float)y / GRID_SIZE * TREE_NOISE_SCALE, 
-                                                        seed + 2, 2); // Lower octaves for smoother clusters
+                    // // Add procedural trees & swamp
+                    for (int y = 0; y < GRID_SIZE; y++) {
+                        for (int x = 0; x < GRID_SIZE; x++) {
+                            float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
+                            float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
+                            float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
+                            alt = std::max(0.0f, std::min(1.0f, alt));
+                            
+                            // 1. Generate Moisture and Forest density noise
+                            float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed + 1, TERRAIN_OCTAVES);
+                            float forestNoise = fractalNoise((float)x / GRID_SIZE * TREE_NOISE_SCALE, 
+                                                            (float)y / GRID_SIZE * TREE_NOISE_SCALE, 
+                                                            seed + 2, 2); // Lower octaves for smoother clusters
 
-                        Cell& cell = grid[y][x];
-                        cell.altitude = alt;
+                            Cell& cell = grid[y][x];
+                            cell.altitude = alt;
 
-                        // --- Terrain Determination ---
-                        if (alt < WATER_LEVEL) {
-                            cell.type = WATER;
-                            float t = alt / WATER_LEVEL;
-                            cell.r = 0; cell.g = (Uint8)(t * 100); cell.b = (Uint8)(100 + t * 155);
-                        } else if (alt > MOUNTAIN_LEVEL) {
-                            cell.type = MOUNTAIN;
-                            float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
-                            Uint8 c = (Uint8)(100 + t * 155);
-                            cell.r = c; cell.g = c; cell.b = c;
-                        } else {
-                            // Default Grass
-                            cell.type = GRASS;
-                            float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
-                            cell.r = 34 + (Uint8)(t * 20); cell.g = 100 + (Uint8)(t * 50); cell.b = 34 + (Uint8)(t * 20);
+                            // --- Terrain Determination ---
+                            if (alt < WATER_LEVEL) {
+                                cell.type = WATER;
+                                float t = alt / WATER_LEVEL;
+                                cell.r = 0; cell.g = (Uint8)(t * 100); cell.b = (Uint8)(100 + t * 155);
+                            } else if (alt > MOUNTAIN_LEVEL) {
+                                cell.type = MOUNTAIN;
+                                float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
+                                Uint8 c = (Uint8)(100 + t * 155);
+                                cell.r = c; cell.g = c; cell.b = c;
+                            } else {
+                                // Default Grass
+                                cell.type = GRASS;
+                                float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
+                                cell.r = 34 + (Uint8)(t * 20); cell.g = 100 + (Uint8)(t * 50); cell.b = 34 + (Uint8)(t * 20);
 
-                            // --- Intelligent Tree Placement ---
-                            // Must be: above water, below tree line, and within a noise cluster
-                            if (alt < TREE_LINE && forestNoise > (1.0f - TREE_DENSITY)) {
-                                // Optional: Add a small jitter so it's not a solid block of trees
-                                if (std::uniform_real_distribution<float>(0, 1)(rng) < 0.8f) {
-                                    cell.type = TREE;
-                                    cell.r = 10; cell.g = 60; cell.b = 10; 
-                                }
-                            } 
-                            // // Mud placement (keeping your original logic or slightly tweaking)
-                            // else if (moisture > 0.5f && alt < 0.5f && std::uniform_real_distribution<float>(0,1)(rng) < 0.2f) {
-                            //     cell.type = SWAMP;
-                            //     //cell.r = 60; cell.g = 41; cell.b = 15;
-                            //     cell.r = 1; cell.g = 46; cell.b = 42;
-                            // }
+                                // --- Intelligent Tree Placement ---
+                                // Must be: above water, below tree line, and within a noise cluster
+                                if (alt < TREE_LINE && forestNoise > (1.0f - TREE_DENSITY)) {
+                                    // Optional: Add a small jitter so it's not a solid block of trees
+                                    if (std::uniform_real_distribution<float>(0, 1)(rng) < 0.8f) {
+                                        cell.type = TREE;
+                                        cell.r = 10; cell.g = 60; cell.b = 10; 
+                                    }
+                                } 
+                                // // Mud placement (keeping your original logic or slightly tweaking)
+                                // else if (moisture > 0.5f && alt < 0.5f && std::uniform_real_distribution<float>(0,1)(rng) < 0.2f) {
+                                //     cell.type = SWAMP;
+                                //     //cell.r = 60; cell.g = 41; cell.b = 15;
+                                //     cell.r = 1; cell.g = 46; cell.b = 42;
+                                // }
+                            }
                         }
                     }
                 }
             }
         }
+        
+        // Optionally save immediately after generation
+        SaveMap();
     }
 
     // Ensure start is valid
@@ -326,9 +390,33 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     }
     targetPos = squishPos;
 
+    // Initialize NPCs
+    std::vector<std::string> names = {"Andy", "Belle", "Curtis"};
+    int spawned = 0;
+    for (int r = 1; r < 30 && spawned < 3; r++) {
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                int nx = 30 + dx;
+                int ny = 30 + dy;
+                if (isPassable(nx, ny)) {
+                    Agent a;
+                    a.name = names[spawned];
+                    a.gridPos = { nx, ny };
+                    a.realPos = { nx * CELL_SIZE + CELL_SIZE / 2, ny * CELL_SIZE + CELL_SIZE / 2 };
+                    a.waitDuration = std::uniform_real_distribution<float>(2.0f, 5.0f)(rng);
+                    npcs.push_back(a);
+                    spawned++;
+                    if (spawned >= 3) break;
+                }
+            }
+            if (spawned >= 3) break;
+        }
+    }
+
     return SDL_APP_CONTINUE;
 }
 
+// Handle Events
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
@@ -355,6 +443,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     return SDL_APP_CONTINUE;
 }
 
+// Update Game State
 SDL_AppResult SDL_AppIterate(void* appstate) {
     AppState* as = (AppState*)appstate;
 
@@ -384,6 +473,53 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     } else {
         realSquishPos.x = squishPos.x * CELL_SIZE + CELL_SIZE / 2;
         realSquishPos.y = squishPos.y * CELL_SIZE + CELL_SIZE / 2;
+    }
+
+    // Update NPCs
+    for (auto& agent : npcs) {
+        if (agent.isMoving && agent.currentPathIndex < agent.currentPath.size() - 1) {
+            agent.moveProgress += deltaTime * 4.0f * (1.0f / getMoveCost(agent.gridPos.x, agent.gridPos.y)); 
+            if (agent.moveProgress >= 1.0f) {
+                agent.moveProgress = 0.0f;
+                agent.currentPathIndex++;
+                agent.gridPos = agent.currentPath[agent.currentPathIndex];
+                if (agent.currentPathIndex >= agent.currentPath.size() - 1) {
+                    agent.isMoving = false;
+                    agent.currentPath.clear();
+                    agent.waitDuration = (std::rand() % 400) / 100.0f + 2.0f; // 2.0 to 5.99
+                    agent.waitTimer = 0.0f;
+                }
+            }
+
+            if (agent.isMoving) {
+                Point p1 = agent.currentPath[agent.currentPathIndex];
+                Point p2 = agent.currentPath[agent.currentPathIndex + 1];
+                agent.realPos.x = (int)((p1.x + (p2.x - p1.x) * agent.moveProgress) * CELL_SIZE + CELL_SIZE / 2);
+                agent.realPos.y = (int)((p1.y + (p2.y - p1.y) * agent.moveProgress) * CELL_SIZE + CELL_SIZE / 2);
+            }
+        } else {
+            agent.realPos.x = agent.gridPos.x * CELL_SIZE + CELL_SIZE / 2;
+            agent.realPos.y = agent.gridPos.y * CELL_SIZE + CELL_SIZE / 2;
+            
+            agent.waitTimer += deltaTime;
+            if (agent.waitTimer >= agent.waitDuration) {
+                int dx = (std::rand() % 21) - 10;
+                int dy = (std::rand() % 21) - 10;
+                int targetX = agent.gridPos.x + dx;
+                int targetY = agent.gridPos.y + dy;
+                if (isPassable(targetX, targetY)) {
+                    std::vector<Point> p = findPath(agent.gridPos, {targetX, targetY});
+                    if (!p.empty()) {
+                        agent.currentPath = p;
+                        agent.isMoving = true;
+                        agent.currentPathIndex = 0;
+                        agent.moveProgress = 0.0f;
+                    }
+                }
+                agent.waitTimer = 0.0f;
+                agent.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+            }
+        }
     }
 
     SDL_SetRenderDrawColor(as->renderer, 50, 50, 50, 255);
@@ -419,6 +555,15 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     SDL_SetRenderDrawColor(as->renderer, 0, 0, 255, 255);
     DrawFilledCircle(as->renderer, (float)realSquishPos.x, (float)realSquishPos.y, SQUISH_RADIUS);
+
+    // Draw NPCs
+    for (const auto& agent : npcs) {
+        SDL_SetRenderDrawColor(as->renderer, 255, 165, 0, 255); // Orange
+        DrawFilledCircle(as->renderer, (float)agent.realPos.x, (float)agent.realPos.y, SQUISH_RADIUS);
+        
+        SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
+        SDL_RenderDebugText(as->renderer, (float)agent.realPos.x - 10, (float)agent.realPos.y + SQUISH_RADIUS + 2, agent.name.c_str());
+    }
     
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 20, seedString);
@@ -428,6 +573,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     return SDL_APP_CONTINUE;
 }
 
+// Quit
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     if (appstate) {
         AppState* as = (AppState*)appstate;
