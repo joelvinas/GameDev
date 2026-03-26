@@ -11,37 +11,7 @@
 #include <string>
 #include <cstdlib>
 #include <fstream>
-
-// Constants
-const int GIVEN_SEED = 0; //65100292;
-const int WINDOW_WIDTH = 1280;
-const int WINDOW_HEIGHT = 720;
-const int MAP_SIZE = 900;
-const int GRID_SIZE = 60; // Doubled resolution for better procedural map
-const int CELL_SIZE = MAP_SIZE / GRID_SIZE; // 12
-const float SQUISH_RADIUS = 5.0f;
-const float MUD_SPEED = 2.0f;
-const char* MAP_FILENAME = "GameMap.map";
-
-// Terrain Config
-const float TERRAIN_NOISE_SCALE = 3.0f;       // Higher = more varied/rugged, Lower = flatter/smoother [3]
-const float TERRAIN_HEIGHT_OFFSET = 0.0f;     // > 0.0 = higher land (more mountains), < 0.0 = lower land (more lakes) [0.0]
-const float WATER_LEVEL = 0.45f;              // Altitude below this is water [0.35]
-const float MOUNTAIN_LEVEL = 0.75f;           // Altitude above this is mountain [0.75]
-const int TERRAIN_OCTAVES = 4;                // More octaves = more high-frequency detail (more jagged) [4]
-
-// New Terrain Config for Trees
-const float TREE_DENSITY = 0.4f;       // 0.0 to 1.0 (Higher = larger/denser forests)
-const float TREE_NOISE_SCALE = 5.0f;   // Scale of the forest patches
-const float TREE_LINE = 0.7f;          // Max altitude for trees (below mountains)
-
-enum CellType { GRASS = 0, OBSTACLE, SWAMP, WATER, MOUNTAIN, TREE };
-
-struct Cell {
-    CellType type;
-    float altitude; 
-    Uint8 r, g, b;
-};
+#include "MapGeneration.h"
 
 struct Point {
     int x, y;
@@ -65,7 +35,6 @@ std::vector<Point> currentPath;
 bool isMoving = false;
 float moveProgress = 0.0f;
 size_t currentPathIndex = 0;
-Cell grid[GRID_SIZE][GRID_SIZE];
 Point realSquishPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SIZE / 2 };
 
 struct Agent {
@@ -106,6 +75,69 @@ float getMoveCost(int x, int y) {
         baseCost *= (1.0f + (alt - 0.7f) * 10.0f); // increasingly expensive
     }
     return baseCost;
+}
+
+bool lineOfSight(Point p0, Point p1) {
+    int x0 = p0.x, y0 = p0.y;
+    int x1 = p1.x, y1 = p1.y;
+    int dx = std::abs(x1 - x0);
+    int dy = std::abs(y1 - y0);
+    int x = x0, y = y0;
+    int n = 1 + dx + dy;
+    int x_inc = (x1 > x0) ? 1 : -1;
+    int y_inc = (y1 > y0) ? 1 : -1;
+    int error = dx - dy;
+    dx *= 2;
+    dy *= 2;
+
+    for (; n > 0; --n) {
+        if (!isPassable(x, y)) return false;
+        if (getMoveCost(x, y) > 1.0f) return false;
+
+        if (error > 0) {
+            x += x_inc;
+            error -= dy;
+        } else if (error < 0) {
+            y += y_inc;
+            error += dx;
+        } else {
+            x += x_inc;
+            error -= dy;
+            y += y_inc;
+            error += dx;
+            --n; 
+        }
+    }
+    return true;
+}
+
+std::vector<Point> stringPull(const std::vector<Point>& path) {
+    if (path.size() <= 2) return path;
+    std::vector<Point> smoothPath;
+    smoothPath.push_back(path.front());
+    size_t currentIndex = 0;
+    while (currentIndex < path.size() - 1) {
+        size_t farthestVisible = currentIndex + 1;
+        for (size_t i = currentIndex + 2; i < path.size(); i++) {
+            if (lineOfSight(path[currentIndex], path[i])) {
+                farthestVisible = i;
+            }
+        }
+        smoothPath.push_back(path[farthestVisible]);
+        currentIndex = farthestVisible;
+    }
+    return smoothPath;
+}
+
+float getSplineVal(float p0, float p1, float p2, float p3, float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return 0.5f * (
+        (2.0f * p1) +
+        (-p0 + p2) * t +
+        (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+        (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3
+    );
 }
 
 // A* Implementation
@@ -176,98 +208,6 @@ void DrawFilledCircle(SDL_Renderer* renderer, float x, float y, float r) {
     }
 }
 
-// Procedural Terrain Helpers
-float lerp(float a, float b, float t) { return a + t * (b - a); } // Linear interpolation
-float smoothstep(float t) { return t * t * (3.0f - 2.0f * t); } // Smoothstep
-
-struct Vector2 { float x, y; };
-Vector2 randomGradient(int ix, int iy, unsigned seed) {
-    unsigned a = ix ^ seed, b = iy ^ (seed * 1911520717);
-    a *= 3284157443; b ^= a << 16 | a >> 16;
-    b *= 1911520717; a ^= b << 16 | b >> 16;
-    a *= 2048419325;
-    float random = a * (3.14159265f / ~(~0u >> 1));
-    return {cosf(random), sinf(random)};
-}
-
-float dotGridGradient(int ix, int iy, float x, float y, unsigned seed) {
-    Vector2 gradient = randomGradient(ix, iy, seed);
-    float dx = x - (float)ix;
-    float dy = y - (float)iy;
-    return (dx*gradient.x + dy*gradient.y);
-}
-
-// Perlin noise returning -1.0 to 1.0 roughly
-float perlin(float x, float y, unsigned seed) {
-    int x0 = (int)std::floor(x);
-    int x1 = x0 + 1;
-    int y0 = (int)std::floor(y);
-    int y1 = y0 + 1;
-    float sx = x - (float)x0;
-    float sy = y - (float)y0;
-    float n0 = dotGridGradient(x0, y0, x, y, seed);
-    float n1 = dotGridGradient(x1, y0, x, y, seed);
-    float ix0 = lerp(n0, n1, smoothstep(sx));
-    n0 = dotGridGradient(x0, y1, x, y, seed);
-    n1 = dotGridGradient(x1, y1, x, y, seed);
-    float ix1 = lerp(n0, n1, smoothstep(sx));
-    return lerp(ix0, ix1, smoothstep(sy));
-}
-
-// Fractal noise returning 0.0 to 1.0
-float fractalNoise(float x, float y, unsigned seed, int octaves = 4) {
-    float total = 0.0f;
-    float frequency = 1.0f;
-    float amplitude = 1.0f;
-    float maxVal = 0.0f;
-    for(int i = 0; i < octaves; i++) {
-        total += perlin(x * frequency, y * frequency, seed) * amplitude;
-        maxVal += amplitude;
-        amplitude *= 0.5f;
-        frequency *= 2.0f;
-    }
-    float normalized = total / maxVal; // roughly -1.0 to 1.0
-    return (normalized + 1.0f) * 0.5f; // scale to 0.0 to 1.0
-}
-
-
-std::string GetMapFilePath() {
-    const char* basePath = SDL_GetBasePath();
-    std::string path;
-    if (basePath) {
-        path = std::string(basePath) + MAP_FILENAME;
-        SDL_free((void*)basePath);
-    } else {
-        path = MAP_FILENAME; // Fallback
-    }
-    return path;
-}
-
-// Save and Load Map
-void SaveMap() {
-    std::string path = GetMapFilePath();
-    std::ofstream outFile(path, std::ios::binary);
-    if (outFile.is_open()) {
-        // Write the entire grid array to disk
-        outFile.write(reinterpret_cast<const char*>(grid), sizeof(grid));
-        outFile.close();
-        SDL_Log("Map saved successfully to %s", path.c_str());
-    }
-}
-
-bool LoadMap() {
-    std::string path = GetMapFilePath();
-    std::ifstream inFile(path, std::ios::binary);
-    if (inFile.is_open()) {
-        // Read the bytes back into the grid array
-        inFile.read(reinterpret_cast<char*>(grid), sizeof(grid));
-        inFile.close();
-        SDL_Log("Map loaded successfully from %s", path.c_str());
-        return true;
-    }
-    return false;
-}
-
 // Initialize Game
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -290,94 +230,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (!LoadMap()) {
         SDL_Log("No save found. Generating new map...");
         // Generate Terrain
-        for (int y = 0; y < GRID_SIZE; y++) {
-            for (int x = 0; x < GRID_SIZE; x++) {
-                float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
-                alt = std::max(0.0f, std::min(1.0f, alt)); // Clamp altitude
-                float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed+1, TERRAIN_OCTAVES);
-
-                Cell& cell = grid[y][x];
-                cell.altitude = alt;
-
-                if (alt < WATER_LEVEL) {
-                    cell.type = WATER;
-                    // Deep blue to light blue
-                    float t = alt / WATER_LEVEL;
-                    cell.r = 0;
-                    cell.g = (Uint8)(t * 100);
-                    cell.b = (Uint8)(100 + t * 155);
-                } else if (alt > MOUNTAIN_LEVEL) {
-                    cell.type = MOUNTAIN;
-                    // Grey to White
-                    float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
-                    Uint8 c = (Uint8)(100 + t * 155);
-                    cell.r = c; cell.g = c; cell.b = c;
-                } else {
-                    cell.type = GRASS;
-                    // Green shades
-                    float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
-                    cell.r = 34 + (Uint8)(t * 20);
-                    cell.g = 100 + (Uint8)(t * 50);
-                    cell.b = 34 + (Uint8)(t * 20);
-
-                    // // Add procedural trees & swamp
-                    for (int y = 0; y < GRID_SIZE; y++) {
-                        for (int x = 0; x < GRID_SIZE; x++) {
-                            float scaleX = (float)x / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                            float scaleY = (float)y / GRID_SIZE * TERRAIN_NOISE_SCALE;
-                            float alt = fractalNoise(scaleX, scaleY, seed, TERRAIN_OCTAVES) + TERRAIN_HEIGHT_OFFSET;
-                            alt = std::max(0.0f, std::min(1.0f, alt));
-                            
-                            // 1. Generate Moisture and Forest density noise
-                            float moisture = fractalNoise(scaleX + 10.0f, scaleY + 10.0f, seed + 1, TERRAIN_OCTAVES);
-                            float forestNoise = fractalNoise((float)x / GRID_SIZE * TREE_NOISE_SCALE, 
-                                                            (float)y / GRID_SIZE * TREE_NOISE_SCALE, 
-                                                            seed + 2, 2); // Lower octaves for smoother clusters
-
-                            Cell& cell = grid[y][x];
-                            cell.altitude = alt;
-
-                            // --- Terrain Determination ---
-                            if (alt < WATER_LEVEL) {
-                                cell.type = WATER;
-                                float t = alt / WATER_LEVEL;
-                                cell.r = 0; cell.g = (Uint8)(t * 100); cell.b = (Uint8)(100 + t * 155);
-                            } else if (alt > MOUNTAIN_LEVEL) {
-                                cell.type = MOUNTAIN;
-                                float t = (alt - MOUNTAIN_LEVEL) / (1.0f - MOUNTAIN_LEVEL);
-                                Uint8 c = (Uint8)(100 + t * 155);
-                                cell.r = c; cell.g = c; cell.b = c;
-                            } else {
-                                // Default Grass
-                                cell.type = GRASS;
-                                float t = (alt - WATER_LEVEL) / (MOUNTAIN_LEVEL - WATER_LEVEL);
-                                cell.r = 34 + (Uint8)(t * 20); cell.g = 100 + (Uint8)(t * 50); cell.b = 34 + (Uint8)(t * 20);
-
-                                // --- Intelligent Tree Placement ---
-                                // Must be: above water, below tree line, and within a noise cluster
-                                if (alt < TREE_LINE && forestNoise > (1.0f - TREE_DENSITY)) {
-                                    // Optional: Add a small jitter so it's not a solid block of trees
-                                    if (std::uniform_real_distribution<float>(0, 1)(rng) < 0.8f) {
-                                        cell.type = TREE;
-                                        cell.r = 10; cell.g = 60; cell.b = 10; 
-                                    }
-                                } 
-                                // // Mud placement (keeping your original logic or slightly tweaking)
-                                // else if (moisture > 0.5f && alt < 0.5f && std::uniform_real_distribution<float>(0,1)(rng) < 0.2f) {
-                                //     cell.type = SWAMP;
-                                //     //cell.r = 60; cell.g = 41; cell.b = 15;
-                                //     cell.r = 1; cell.g = 46; cell.b = 42;
-                                // }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Optionally save immediately after generation
+        GenerateMap(seed);
         SaveMap();
     }
 
@@ -453,7 +306,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     lastTime = currentTime;
 
     if (isMoving && currentPathIndex < currentPath.size() - 1) {
-        moveProgress += deltaTime * 5.0f * (1.0f / getMoveCost(squishPos.x, squishPos.y)); 
+        float dist = getDistance(currentPath[currentPathIndex], currentPath[currentPathIndex + 1]);
+        if (dist == 0.0f) dist = 1.0f;
+        moveProgress += deltaTime * 5.0f * (1.0f / getMoveCost(squishPos.x, squishPos.y)) / dist; 
+
         if (moveProgress >= 1.0f) {
             moveProgress = 0.0f;
             currentPathIndex++;
@@ -465,10 +321,21 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
 
         if (isMoving) {
-            Point p1 = currentPath[currentPathIndex];
-            Point p2 = currentPath[currentPathIndex + 1];
-            realSquishPos.x = (int)((p1.x + (p2.x - p1.x) * moveProgress) * CELL_SIZE + CELL_SIZE / 2);
-            realSquishPos.y = (int)((p1.y + (p2.y - p1.y) * moveProgress) * CELL_SIZE + CELL_SIZE / 2);
+            int i0 = std::max(0, (int)currentPathIndex - 1);
+            int i1 = currentPathIndex;
+            int i2 = std::min((int)currentPath.size() - 1, (int)currentPathIndex + 1);
+            int i3 = std::min((int)currentPath.size() - 1, (int)currentPathIndex + 2);
+
+            Point p0 = currentPath[i0];
+            Point p1 = currentPath[i1];
+            Point p2 = currentPath[i2];
+            Point p3 = currentPath[i3];
+
+            float rx = getSplineVal((float)p0.x, (float)p1.x, (float)p2.x, (float)p3.x, moveProgress);
+            float ry = getSplineVal((float)p0.y, (float)p1.y, (float)p2.y, (float)p3.y, moveProgress);
+
+            realSquishPos.x = (int)(rx * CELL_SIZE + CELL_SIZE / 2);
+            realSquishPos.y = (int)(ry * CELL_SIZE + CELL_SIZE / 2);
         }
     } else {
         realSquishPos.x = squishPos.x * CELL_SIZE + CELL_SIZE / 2;
@@ -478,7 +345,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Update NPCs
     for (auto& agent : npcs) {
         if (agent.isMoving && agent.currentPathIndex < agent.currentPath.size() - 1) {
-            agent.moveProgress += deltaTime * 4.0f * (1.0f / getMoveCost(agent.gridPos.x, agent.gridPos.y)); 
+            float dist = getDistance(agent.currentPath[agent.currentPathIndex], agent.currentPath[agent.currentPathIndex + 1]);
+            if (dist == 0.0f) dist = 1.0f;
+            agent.moveProgress += deltaTime * 4.0f * (1.0f / getMoveCost(agent.gridPos.x, agent.gridPos.y)) / dist; 
+
             if (agent.moveProgress >= 1.0f) {
                 agent.moveProgress = 0.0f;
                 agent.currentPathIndex++;
@@ -492,10 +362,21 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             }
 
             if (agent.isMoving) {
-                Point p1 = agent.currentPath[agent.currentPathIndex];
-                Point p2 = agent.currentPath[agent.currentPathIndex + 1];
-                agent.realPos.x = (int)((p1.x + (p2.x - p1.x) * agent.moveProgress) * CELL_SIZE + CELL_SIZE / 2);
-                agent.realPos.y = (int)((p1.y + (p2.y - p1.y) * agent.moveProgress) * CELL_SIZE + CELL_SIZE / 2);
+                int i0 = std::max(0, (int)agent.currentPathIndex - 1);
+                int i1 = agent.currentPathIndex;
+                int i2 = std::min((int)agent.currentPath.size() - 1, (int)agent.currentPathIndex + 1);
+                int i3 = std::min((int)agent.currentPath.size() - 1, (int)agent.currentPathIndex + 2);
+
+                Point p0 = agent.currentPath[i0];
+                Point p1 = agent.currentPath[i1];
+                Point p2 = agent.currentPath[i2];
+                Point p3 = agent.currentPath[i3];
+
+                float rx = getSplineVal((float)p0.x, (float)p1.x, (float)p2.x, (float)p3.x, agent.moveProgress);
+                float ry = getSplineVal((float)p0.y, (float)p1.y, (float)p2.y, (float)p3.y, agent.moveProgress);
+
+                agent.realPos.x = (int)(rx * CELL_SIZE + CELL_SIZE / 2);
+                agent.realPos.y = (int)(ry * CELL_SIZE + CELL_SIZE / 2);
             }
         } else {
             agent.realPos.x = agent.gridPos.x * CELL_SIZE + CELL_SIZE / 2;
