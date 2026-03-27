@@ -12,12 +12,14 @@
 #include <fstream>
 #include "MapGeneration.h"
 
+// Point structure for grid coordinates
 struct Point {
     int x, y;
     bool operator==(const Point& other) const { return x == other.x && y == other.y; }
     bool operator!=(const Point& other) const { return !(*this == other); }
 };
 
+// Node structure for A* algorithm
 struct Node {
     Point pos;
     float gCost, hCost;
@@ -36,6 +38,7 @@ float moveProgress = 0.0f;
 size_t currentPathIndex = 0;
 Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SIZE / 2 };
 
+// Agent structure for NPCs
 struct Agent {
     std::string name;
     Point gridPos;
@@ -49,14 +52,22 @@ struct Agent {
 };
 std::vector<Agent> npcs;
 
+bool settlementFound = false;
+Point settlementPos = { -1, -1 };
+const int SETTLEMENT_RADIUS = 3;
+
+const char* SETTLEMENT_FILENAME = "Settlement.dat";
+
+
 unsigned currentSeed = 0;
 char seedString[64] = "";
 
-// Helper to get Euclidean distance
+// Get Euclidean distance between two points
 float getDistance(Point p1, Point p2) {
     return std::sqrt(std::pow((float)p1.x - p2.x, 2) + std::pow((float)p1.y - p2.y, 2));
 }
 
+// Check if a cell is passable
 bool isPassable(int x, int y) {
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false;
     CellType t = grid[y][x].type;
@@ -65,6 +76,27 @@ bool isPassable(int x, int y) {
     return true;
 }
 
+// Check if a cell is valid for a settlement
+bool isValidSettlement(int cx, int cy) {
+    if (cx < SETTLEMENT_RADIUS || cx >= GRID_SIZE - SETTLEMENT_RADIUS || 
+        cy < SETTLEMENT_RADIUS || cy >= GRID_SIZE - SETTLEMENT_RADIUS) {
+        return false;
+    }
+    for (int dy = -SETTLEMENT_RADIUS; dy <= SETTLEMENT_RADIUS; dy++) {
+        for (int dx = -SETTLEMENT_RADIUS; dx <= SETTLEMENT_RADIUS; dx++) {
+            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                int px = cx + dx;
+                int py = cy + dy;
+                if (!isPassable(px, py) || grid[py][px].type != GRASS) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+// Get movement cost for a cell
 float getMoveCost(int x, int y) {
     float baseCost = 1.0f;
     CellType t = grid[y][x].type;
@@ -76,6 +108,7 @@ float getMoveCost(int x, int y) {
     return baseCost;
 }
 
+// Bresenham's line algorithm for line of sight
 bool lineOfSight(Point p0, Point p1) {
     int x0 = p0.x, y0 = p0.y;
     int x1 = p1.x, y1 = p1.y;
@@ -110,12 +143,13 @@ bool lineOfSight(Point p0, Point p1) {
     return true;
 }
 
+// String pulling algorithm to smooth paths
 std::vector<Point> stringPull(const std::vector<Point>& path) {
     if (path.size() <= 2) return path;
     std::vector<Point> smoothPath;
     smoothPath.push_back(path.front());
     size_t currentIndex = 0;
-    while (currentIndex < path.size() - 1) {
+    while (currentIndex + 1 < path.size()) {
         size_t farthestVisible = currentIndex + 1;
         for (size_t i = currentIndex + 2; i < path.size(); i++) {
             if (lineOfSight(path[currentIndex], path[i])) {
@@ -128,6 +162,7 @@ std::vector<Point> stringPull(const std::vector<Point>& path) {
     return smoothPath;
 }
 
+// Catmull-Rom spline interpolation
 float getSplineVal(float p0, float p1, float p2, float p3, float t) {
     float t2 = t * t;
     float t3 = t2 * t;
@@ -207,6 +242,50 @@ void DrawFilledCircle(SDL_Renderer* renderer, float x, float y, float r) {
     }
 }
 
+// Help to draw a hollow hexagon
+void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r) {
+    float prevX = x + r;
+    float prevY = y;
+    for (int i = 1; i <= 6; i++) {
+        float angle = i * (3.14159265f / 3.0f);
+        float nextX = x + r * std::cos(angle);
+        float nextY = y + r * std::sin(angle);
+        SDL_RenderLine(renderer, prevX, prevY, nextX, nextY);
+        prevX = nextX;
+        prevY = nextY;
+    }
+}
+
+// Save settlement to file
+void SaveSettlement() {
+    std::string path = "bin\\Settlement.dat";
+    std::ofstream outFile(path, std::ios::binary);
+    if (outFile.is_open()) {
+        outFile.write(reinterpret_cast<const char*>(&settlementPos), sizeof(Point));
+        outFile.close();
+        SDL_Log("Settlement saved to %s", path.c_str());
+    }
+}
+
+// Load settlement from file
+bool LoadSettlement() {
+    std::string path = "bin\\Settlement.dat";
+    std::ifstream inFile(path, std::ios::binary);
+    if (inFile.is_open()) {
+        inFile.read(reinterpret_cast<char*>(&settlementPos), sizeof(Point));
+        int readBytes = inFile.gcount();
+        if (readBytes == sizeof(Point)) {
+            settlementFound = true;
+            SDL_Log("Settlement loaded from %s: %d, %d", path.c_str(), settlementPos.x, settlementPos.y);
+            inFile.close();
+            return true;
+        }
+        inFile.close();
+        SDL_Log("Settlement file %s was empty or corrupted.", path.c_str());
+    }
+    return false;
+}
+
 // Initialize Game
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -232,6 +311,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         GenerateMap(seed);
         SaveMap();
     }
+
+    LoadSettlement();
 
     // Ensure start is valid
     playerPos = { 10, 10 };
@@ -268,7 +349,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     return SDL_APP_CONTINUE;
 }
 
-// Handle Events
+// Handle User Input Events
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
@@ -281,7 +362,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
                 int targetY = (int)(py / CELL_SIZE);
                 if (targetX >= 0 && targetX < GRID_SIZE && targetY >= 0 && targetY < GRID_SIZE && isPassable(targetX, targetY)) {
                     std::vector<Point> newPath = findPath(playerPos, { targetX, targetY });
-                    if (!newPath.empty()) {
+                    if (newPath.size() > 1) {
                         targetPos = { targetX, targetY };
                         currentPath = newPath;
                         isMoving = true;
@@ -304,7 +385,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     float deltaTime = (currentTime - lastTime) / 1e9f;
     lastTime = currentTime;
 
-    if (isMoving && currentPathIndex < currentPath.size() - 1) {
+    if (isMoving && currentPathIndex + 1 < currentPath.size()) {
         float dist = getDistance(currentPath[currentPathIndex], currentPath[currentPathIndex + 1]);
         if (dist == 0.0f) dist = 1.0f;
         moveProgress += deltaTime * 5.0f * (1.0f / getMoveCost(playerPos.x, playerPos.y)) / dist; 
@@ -313,7 +394,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             moveProgress = 0.0f;
             currentPathIndex++;
             playerPos = currentPath[currentPathIndex];
-            if (currentPathIndex >= currentPath.size() - 1) {
+            if (currentPathIndex + 1 >= currentPath.size()) {
                 isMoving = false;
                 currentPath.clear();
             }
@@ -343,7 +424,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // Update NPCs
     for (auto& agent : npcs) {
-        if (agent.isMoving && agent.currentPathIndex < agent.currentPath.size() - 1) {
+        if (agent.isMoving && agent.currentPathIndex + 1 < agent.currentPath.size()) {
             float dist = getDistance(agent.currentPath[agent.currentPathIndex], agent.currentPath[agent.currentPathIndex + 1]);
             if (dist == 0.0f) dist = 1.0f;
             agent.moveProgress += deltaTime * 4.0f * (1.0f / getMoveCost(agent.gridPos.x, agent.gridPos.y)) / dist; 
@@ -352,7 +433,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                 agent.moveProgress = 0.0f;
                 agent.currentPathIndex++;
                 agent.gridPos = agent.currentPath[agent.currentPathIndex];
-                if (agent.currentPathIndex >= agent.currentPath.size() - 1) {
+                if (agent.currentPathIndex + 1 >= agent.currentPath.size()) {
                     agent.isMoving = false;
                     agent.currentPath.clear();
                     agent.waitDuration = (std::rand() % 400) / 100.0f + 2.0f; // 2.0 to 5.99
@@ -383,28 +464,76 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             
             agent.waitTimer += deltaTime;
             if (agent.waitTimer >= agent.waitDuration) {
-                int dx = (std::rand() % 21) - 10;
-                int dy = (std::rand() % 21) - 10;
-                int targetX = agent.gridPos.x + dx;
-                int targetY = agent.gridPos.y + dy;
-                if (isPassable(targetX, targetY)) {
-                    std::vector<Point> p = findPath(agent.gridPos, {targetX, targetY});
-                    if (!p.empty()) {
-                        agent.currentPath = p;
-                        agent.isMoving = true;
-                        agent.currentPathIndex = 0;
-                        agent.moveProgress = 0.0f;
+                if (!settlementFound) {
+                    bool found = false;
+                    for (int dy = -15; dy <= 15 && !found; dy++) {
+                        for (int dx = -15; dx <= 15 && !found; dx++) {
+                            if (dx*dx + dy*dy <= 15*15) {
+                                int cx = agent.gridPos.x + dx;
+                                int cy = agent.gridPos.y + dy;
+                                if (isValidSettlement(cx, cy)) {
+                                    settlementFound = true;
+                                    settlementPos = { cx, cy };
+                                    SaveSettlement();
+                                    found = true;
+                                    SDL_Log("%s found a settlement at %d, %d!", agent.name.c_str(), cx, cy);
+                                }
+                            }
+                        }
+                    }
+                    if (settlementFound) {
+                        for (auto& a : npcs) {
+                            std::vector<Point> p = findPath(a.gridPos, settlementPos);
+                            if (p.size() > 1) {
+                                a.currentPath = p;
+                                a.isMoving = true;
+                                a.currentPathIndex = 0;
+                                a.moveProgress = 0.0f;
+                            }
+                        }
+                        break; 
                     }
                 }
-                agent.waitTimer = 0.0f;
-                agent.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+
+                if (!agent.isMoving) {
+                    int targetX = agent.gridPos.x;
+                    int targetY = agent.gridPos.y;
+                    
+                    if (settlementFound) {
+                        int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                        int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                        if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                            targetX = settlementPos.x + dx;
+                            targetY = settlementPos.y + dy;
+                        }
+                    } else {
+                        int dx = (std::rand() % 21) - 10;
+                        int dy = (std::rand() % 21) - 10;
+                        targetX = agent.gridPos.x + dx;
+                        targetY = agent.gridPos.y + dy;
+                    }
+
+                    if (isPassable(targetX, targetY)) {
+                        std::vector<Point> p = findPath(agent.gridPos, {targetX, targetY});
+                        if (p.size() > 1) {
+                            agent.currentPath = p;
+                            agent.isMoving = true;
+                            agent.currentPathIndex = 0;
+                            agent.moveProgress = 0.0f;
+                        }
+                    }
+                    agent.waitTimer = 0.0f;
+                    agent.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+                }
             }
         }
     }
 
+    // Draw Map
     SDL_SetRenderDrawColor(as->renderer, 50, 50, 50, 255);
     SDL_RenderClear(as->renderer);
 
+    // Draw Cells
     for (int y = 0; y < GRID_SIZE; y++) {
         for (int x = 0; x < GRID_SIZE; x++) {
             Cell& c = grid[y][x];
@@ -419,9 +548,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     }
 
-    if (!currentPath.empty()) {
+    // Draw Path
+    if (currentPath.size() > 1) {
         SDL_SetRenderDrawColor(as->renderer, 255, 255, 0, 255);
-        for (size_t i = 0; i < currentPath.size() - 1; i++) {
+        for (size_t i = 0; i + 1 < currentPath.size(); i++) {
             float x1 = currentPath[i].x * CELL_SIZE + CELL_SIZE / 2.0f;
             float y1 = currentPath[i].y * CELL_SIZE + CELL_SIZE / 2.0f;
             float x2 = currentPath[i+1].x * CELL_SIZE + CELL_SIZE / 2.0f;
@@ -430,24 +560,38 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     }
 
+    if (settlementFound) {
+        SDL_SetRenderDrawColor(as->renderer, 255, 165, 0, 255); 
+        float cx = settlementPos.x * CELL_SIZE + CELL_SIZE / 2.0f;
+        float cy = settlementPos.y * CELL_SIZE + CELL_SIZE / 2.0f;
+        float r = (SETTLEMENT_RADIUS + 0.5f) * CELL_SIZE; 
+        DrawHexagon(as->renderer, cx, cy, r);
+    }
+
+    // Draw Target
     SDL_SetRenderDrawColor(as->renderer, 255, 0, 0, 255); 
     DrawFilledCircle(as->renderer, targetPos.x * CELL_SIZE + CELL_SIZE / 2.0f, targetPos.y * CELL_SIZE + CELL_SIZE / 2.0f, PLAYER_RADIUS * 0.5f);
 
+    // Draw Player
     SDL_SetRenderDrawColor(as->renderer, 0, 0, 255, 255);
     DrawFilledCircle(as->renderer, (float)realPlayerPos.x, (float)realPlayerPos.y, PLAYER_RADIUS);
 
     // Draw NPCs
     for (const auto& agent : npcs) {
+        // Draw NPC
         SDL_SetRenderDrawColor(as->renderer, 255, 165, 0, 255); // Orange
         DrawFilledCircle(as->renderer, (float)agent.realPos.x, (float)agent.realPos.y, PLAYER_RADIUS);
         
+        // Draw NPC Name
         SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
         SDL_RenderDebugText(as->renderer, (float)agent.realPos.x - 10, (float)agent.realPos.y + PLAYER_RADIUS + 2, agent.name.c_str());
     }
     
+    // Draw Seed
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 20, seedString);
 
+    // Present
     SDL_RenderPresent(as->renderer);
 
     return SDL_APP_CONTINUE;
