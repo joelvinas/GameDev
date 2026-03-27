@@ -13,5 +13,5 @@ exit /b 1
 :M1
 call %VCVARS% x64
 cd /d "%~dp0\.."
-cl src\Agent.cpp /Iinclude /EHsc /std:c++17 /Febin\Agent.exe /Foobj\
-bin\Agent.exe
+cl src\Test_Agent.cpp /Iinclude /EHsc /std:c++17 /Febin\Test_Agent.exe /Foobj\
+bin\Test_Agent.exe
