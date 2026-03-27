@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <random>
 
-const char* MAP_FILENAME = "GameMap.map";
-
 // Terrain Config
 const float TERRAIN_NOISE_SCALE = 3.0f;       
 const float TERRAIN_HEIGHT_OFFSET = 0.0f;     
