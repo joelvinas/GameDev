@@ -1,6 +1,7 @@
 #include "Agent.h"
 #include "Navigation.h"
 #include "Constants.h"
+#include "EntityManager.h"
 #include <random>
 #include <algorithm>
 
@@ -48,13 +49,90 @@ void Agent::Update(float deltaTime) {
             if (!isMoving) {
                 int targetX = gridPos.x;
                 int targetY = gridPos.y;
-                
+                if (!settlementFound && grid[gridPos.y][gridPos.x].type == GRASS) {
+                    bool validSettlement = true;
+                    for (int dy = -SETTLEMENT_RADIUS; dy <= SETTLEMENT_RADIUS; dy++) {
+                        for (int dx = -SETTLEMENT_RADIUS; dx <= SETTLEMENT_RADIUS; dx++) {
+                            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                                int cx = gridPos.x + dx;
+                                int cy = gridPos.y + dy;
+                                if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE) {
+                                    if (grid[cy][cx].type == WATER) {
+                                        validSettlement = false;
+                                        break;
+                                    }
+                                } else {
+                                    validSettlement = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!validSettlement) break;
+                    }
+
+                    if (validSettlement) {
+                        settlementFound = true;
+                        settlementPos = gridPos;
+                        SaveSettlement();
+                        EntityManager::AlertFoundSettlement(settlementPos);
+                    }
+                }
+
                 if (settlementFound) {
-                    int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                    int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                    if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
-                        targetX = settlementPos.x + dx;
-                        targetY = settlementPos.y + dy;
+                    if (!hasHouse && !isBuildingHouse) {
+                        for (int attempt = 0; attempt < 50; attempt++) {
+                            int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                            int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                                int hx = settlementPos.x + dx;
+                                int hy = settlementPos.y + dy;
+                                if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE && grid[hy][hx].type == GRASS) {
+                                    isBuildingHouse = true;
+                                    plotPos = {hx, hy};
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (isBuildingHouse && !isMoving) {
+                        int dX = std::abs(gridPos.x - plotPos.x);
+                        int dY = std::abs(gridPos.y - plotPos.y);
+                        if (dX <= 1 && dY <= 1 && (dX != 0 || dY != 0)) {
+                            hasHouse = true;
+                            isBuildingHouse = false;
+                            housePos = plotPos;
+                            agentHouses[name] = housePos;
+                            grid[housePos.y][housePos.x].type = OBSTACLE;
+                            grid[housePos.y][housePos.x].r = 139;
+                            grid[housePos.y][housePos.x].g = 69;
+                            grid[housePos.y][housePos.x].b = 19;
+                            SaveSettlement();
+                        } else {
+                            bool foundPath = false;
+                            for (int adjY = -1; adjY <= 1; adjY++) {
+                                for (int adjX = -1; adjX <= 1; adjX++) {
+                                    if (adjX == 0 && adjY == 0) continue;
+                                    if (isPassable(plotPos.x + adjX, plotPos.y + adjY, name)) {
+                                        targetX = plotPos.x + adjX;
+                                        targetY = plotPos.y + adjY;
+                                        foundPath = true;
+                                        break;
+                                    }
+                                }
+                                if (foundPath) break;
+                            }
+                            if (!foundPath) isBuildingHouse = false;
+                        }
+                    }
+                    
+                    if (!isBuildingHouse) {
+                        int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                        int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                        if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                            targetX = settlementPos.x + dx;
+                            targetY = settlementPos.y + dy;
+                        }
                     }
                 } else {
                     int dx = (std::rand() % 21) - 10;
@@ -63,8 +141,8 @@ void Agent::Update(float deltaTime) {
                     targetY = gridPos.y + dy;
                 }
 
-                if (isPassable(targetX, targetY)) {
-                    std::vector<Point> p = findPath(gridPos, {targetX, targetY});
+                if (isPassable(targetX, targetY, name)) {
+                    std::vector<Point> p = findPath(gridPos, {targetX, targetY}, name);
                     if (p.size() > 1) {
                         currentPath = p;
                         isMoving = true;

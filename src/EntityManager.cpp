@@ -21,6 +21,14 @@ void EntityManager::Initialize() {
                     a.gridPos = { nx, ny };
                     a.realPos = { nx * CELL_SIZE + CELL_SIZE / 2, ny * CELL_SIZE + CELL_SIZE / 2 };
                     a.waitDuration = std::uniform_real_distribution<float>(2.0f, 5.0f)(rng);
+                    if (agentHouses.find(a.name) != agentHouses.end()) {
+                        a.hasHouse = true;
+                        a.housePos = agentHouses[a.name];
+                        grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
+                        grid[a.housePos.y][a.housePos.x].r = 139;
+                        grid[a.housePos.y][a.housePos.x].g = 69;
+                        grid[a.housePos.y][a.housePos.x].b = 19;
+                    }
                     npcs.push_back(a);
                     spawned++;
                     if (spawned >= 3) break;
@@ -45,7 +53,7 @@ void EntityManager::DrawAll(SDL_Renderer* renderer) {
 
 void EntityManager::AlertFoundSettlement(Point settlementPos) {
     for (auto& a : npcs) {
-        std::vector<Point> p = findPath(a.gridPos, settlementPos);
+        std::vector<Point> p = findPath(a.gridPos, settlementPos, a.name);
         if (p.size() > 1) {
             a.currentPath = p;
             a.isMoving = true;

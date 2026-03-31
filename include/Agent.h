@@ -19,6 +19,10 @@ struct Agent {
     size_t currentPathIndex = 0;
     float waitTimer = 0.0f;
     float waitDuration = 0.0f;
+    bool hasHouse = false;
+    Point housePos = { -1, -1 };
+    bool isBuildingHouse = false;
+    Point plotPos = { -1, -1 };
 
     void Update(float deltaTime);
     void Draw(SDL_Renderer* renderer);

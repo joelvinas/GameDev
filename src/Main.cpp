@@ -23,6 +23,8 @@ Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SI
 
 bool settlementFound = false;
 Point settlementPos = { -1, -1 };
+std::map<std::string, Point> agentHouses;
+
 const char* SETTLEMENT_FILENAME = "Settlement.dat";
 const char* MAP_FILENAME = "GameMap.map";
 
@@ -68,6 +70,14 @@ void SaveSettlement() {
     std::ofstream outFile(path, std::ios::binary);
     if (outFile.is_open()) {
         outFile.write(reinterpret_cast<const char*>(&settlementPos), sizeof(Point));
+        size_t numHouses = agentHouses.size();
+        outFile.write(reinterpret_cast<const char*>(&numHouses), sizeof(size_t));
+        for (const auto& pair : agentHouses) {
+            size_t nameLen = pair.first.size();
+            outFile.write(reinterpret_cast<const char*>(&nameLen), sizeof(size_t));
+            outFile.write(pair.first.c_str(), nameLen);
+            outFile.write(reinterpret_cast<const char*>(&pair.second), sizeof(Point));
+        }
         outFile.close();
         SDL_Log("Settlement saved to %s", path.c_str());
     }
@@ -83,6 +93,21 @@ bool LoadSettlement() {
         if (readBytes == sizeof(Point)) {
             settlementFound = true;
             SDL_Log("Settlement loaded from %s: %d, %d", path.c_str(), settlementPos.x, settlementPos.y);
+            
+            size_t numHouses = 0;
+            if (inFile.read(reinterpret_cast<char*>(&numHouses), sizeof(size_t))) {
+                agentHouses.clear();
+                for (size_t i = 0; i < numHouses; ++i) {
+                    size_t nameLen = 0;
+                    inFile.read(reinterpret_cast<char*>(&nameLen), sizeof(size_t));
+                    std::string name(nameLen, '\0');
+                    inFile.read(&name[0], nameLen);
+                    Point housePos;
+                    inFile.read(reinterpret_cast<char*>(&housePos), sizeof(Point));
+                    agentHouses[name] = housePos;
+                }
+            }
+            
             inFile.close();
             return true;
         }
@@ -257,6 +282,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // Draw NPCs
     EntityManager::DrawAll(as->renderer);
+    
+    // Draw House Owner Initials
+    SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
+    for (const auto& pair : agentHouses) {
+        float hx = pair.second.x * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
+        float hy = pair.second.y * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
+        if (!pair.first.empty()) {
+            std::string initial = pair.first.substr(0, 1);
+            SDL_RenderDebugText(as->renderer, hx, hy, initial.c_str());
+        }
+    }
     
     // Draw Seed
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);

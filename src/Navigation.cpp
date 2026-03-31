@@ -17,7 +17,7 @@ struct Node {
 
 // ... Rest of the implementations ...
 // Bresenham's line algorithm for line of sight
-bool lineOfSight(Point p0, Point p1) {
+bool lineOfSight(Point p0, Point p1, std::string agentName) {
     int x0 = p0.x, y0 = p0.y;
     int x1 = p1.x, y1 = p1.y;
     int dx = std::abs(x1 - x0);
@@ -31,7 +31,7 @@ bool lineOfSight(Point p0, Point p1) {
     dy *= 2;
 
     for (; n > 0; --n) {
-        if (!isPassable(x, y)) return false;
+        if (!isPassable(x, y, agentName)) return false;
         if (getMoveCost(x, y) > 1.0f) return false;
 
         if (error > 0) {
@@ -64,7 +64,7 @@ float getSplineVal(float p0, float p1, float p2, float p3, float t) {
 }
 
 // String pulling algorithm to smooth paths
-std::vector<Point> stringPull(const std::vector<Point>& path) {
+std::vector<Point> stringPull(const std::vector<Point>& path, std::string agentName) {
     if (path.size() <= 2) return path;
     std::vector<Point> smoothPath;
     smoothPath.push_back(path.front());
@@ -72,7 +72,7 @@ std::vector<Point> stringPull(const std::vector<Point>& path) {
     while (currentIndex + 1 < path.size()) {
         size_t farthestVisible = currentIndex + 1;
         for (size_t i = currentIndex + 2; i < path.size(); i++) {
-            if (lineOfSight(path[currentIndex], path[i])) {
+            if (lineOfSight(path[currentIndex], path[i], agentName)) {
                 farthestVisible = i;
             }
         }
@@ -100,18 +100,27 @@ float getDistance(Point p1, Point p2) {
 }
 
 // Check if a cell is passable
-bool isPassable(int x, int y) {
+bool isPassable(int x, int y, std::string agentName) {
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false;
     CellType t = grid[y][x].type;
-    if (t == WATER || t == TREE || t == OBSTACLE) return false;
+    if (t == OBSTACLE) {
+        if (!agentName.empty()) {
+            auto it = agentHouses.find(agentName);
+            if (it != agentHouses.end() && it->second.x == x && it->second.y == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (t == WATER || t == TREE) return false;
     if (t == MOUNTAIN && grid[y][x].altitude > 0.85f) return false;
     return true;
 }
 
 
 // A* Implementation
-std::vector<Point> findPath(Point start, Point end) {
-    if (!isPassable(end.x, end.y)) return {};
+std::vector<Point> findPath(Point start, Point end, std::string agentName) {
+    if (!isPassable(end.x, end.y, agentName)) return {};
 
     std::priority_queue<Node, std::vector<Node>, std::greater<Node>> openSet;
     std::vector<std::vector<float>> gCosts(GRID_SIZE, std::vector<float>(GRID_SIZE, INFINITY));
@@ -140,7 +149,7 @@ std::vector<Point> findPath(Point start, Point end) {
                 if (dx == 0 && dy == 0) continue;
                 
                 Point neighbor = { current.pos.x + dx, current.pos.y + dy };
-                if (isPassable(neighbor.x, neighbor.y)) {
+                if (isPassable(neighbor.x, neighbor.y, agentName)) {
                     float moveCost = (dx == 0 || dy == 0) ? 1.0f : 1.414f;
                     moveCost *= getMoveCost(neighbor.x, neighbor.y);
                     float newGCost = gCosts[current.pos.y][current.pos.x] + moveCost;

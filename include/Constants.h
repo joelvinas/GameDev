@@ -6,7 +6,8 @@
 #define CONSTANTS_H
 
 #include <SDL3/SDL.h>
-
+#include <map>
+#include <string>
 // Core Map and UI
 constexpr int GIVEN_SEED = 0;
 constexpr int WINDOW_WIDTH = 1280;
@@ -47,6 +48,7 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r);
 // Settlement State
 extern bool settlementFound;
 extern Point settlementPos;
+extern std::map<std::string, Point> agentHouses;
 void SaveSettlement();
 
 #endif
