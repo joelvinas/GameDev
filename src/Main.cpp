@@ -66,7 +66,8 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r) {
 
 // Save settlement to file
 void SaveSettlement() {
-    std::string path = "bin\\Settlement.dat";
+    const char* base_path = SDL_GetBasePath();
+    std::string path = base_path ? std::string(base_path) + "Settlement.dat" : "bin\\Settlement.dat";
     std::ofstream outFile(path, std::ios::binary);
     if (outFile.is_open()) {
         outFile.write(reinterpret_cast<const char*>(&settlementPos), sizeof(Point));
@@ -85,7 +86,8 @@ void SaveSettlement() {
 
 // Load settlement from file
 bool LoadSettlement() {
-    std::string path = "bin\\Settlement.dat";
+    const char* base_path = SDL_GetBasePath();
+    std::string path = base_path ? std::string(base_path) + "Settlement.dat" : "bin\\Settlement.dat";
     std::ifstream inFile(path, std::ios::binary);
     if (inFile.is_open()) {
         inFile.read(reinterpret_cast<char*>(&settlementPos), sizeof(Point));
