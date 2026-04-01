@@ -127,11 +127,71 @@ void Agent::Update(float deltaTime) {
                     }
                     
                     if (!isBuildingHouse) {
-                        int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                        int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                        if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
-                            targetX = settlementPos.x + dx;
-                            targetY = settlementPos.y + dy;
+                        if (hasHouse && currentJob == "Lumberjack") {
+                            bool atHome = std::abs(gridPos.x - housePos.x) <= 1 && std::abs(gridPos.y - housePos.y) <= 1;
+                            
+                            if (!isGoingToWork && !isWorking && !isReturningHome) {
+                                if (atHome) {
+                                    bool foundTree = false;
+                                    for (int r = 1; r < 30; ++r) {
+                                        for (int dy = -r; dy <= r; dy++) {
+                                            for (int dx = -r; dx <= r; dx++) {
+                                                if (std::abs(dx) == r || std::abs(dy) == r) {
+                                                    int tx = gridPos.x + dx;
+                                                    int ty = gridPos.y + dy;
+                                                    if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE && grid[ty][tx].type == TREE) {
+                                                        for (int ay = -1; ay <= 1; ay++) {
+                                                            for (int ax = -1; ax <= 1; ax++) {
+                                                                if (ax == 0 && ay == 0) continue;
+                                                                if (isPassable(tx + ax, ty + ay, name)) {
+                                                                    workTarget = {tx + ax, ty + ay};
+                                                                    isGoingToWork = true;
+                                                                    targetX = workTarget.x;
+                                                                    targetY = workTarget.y;
+                                                                    foundTree = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            if (foundTree) break;
+                                                        }
+                                                    }
+                                                }
+                                                if (foundTree) break;
+                                            }
+                                            if (foundTree) break;
+                                        }
+                                        if (foundTree) break;
+                                    }
+                                    if (!foundTree) {
+                                        targetX = housePos.x;
+                                        targetY = housePos.y;
+                                    }
+                                } else {
+                                    isReturningHome = true;
+                                    targetX = housePos.x;
+                                    targetY = housePos.y;
+                                }
+                            } else if (isGoingToWork && !isMoving) {
+                                isGoingToWork = false;
+                                isWorking = true;
+                            } else if (isWorking) {
+                                inventory["Lumber"] += 10;
+                                isWorking = false;
+                                isReturningHome = true;
+                                targetX = housePos.x;
+                                targetY = housePos.y;
+                            } else if (isReturningHome && !isMoving) {
+                                isReturningHome = false;
+                                targetX = housePos.x;
+                                targetY = housePos.y;
+                            }
+                        } else {
+                            int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                            int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+                            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                                targetX = settlementPos.x + dx;
+                                targetY = settlementPos.y + dy;
+                            }
                         }
                     }
                 } else {
@@ -141,7 +201,7 @@ void Agent::Update(float deltaTime) {
                     targetY = gridPos.y + dy;
                 }
 
-                if (isPassable(targetX, targetY, name)) {
+                if (isPassable(targetX, targetY, name) && (targetX != gridPos.x || targetY != gridPos.y)) {
                     std::vector<Point> p = findPath(gridPos, {targetX, targetY}, name);
                     if (p.size() > 1) {
                         currentPath = p;
@@ -151,7 +211,11 @@ void Agent::Update(float deltaTime) {
                     }
                 }
                 waitTimer = 0.0f;
-                waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+                if (isWorking) {
+                    waitDuration = 5.0f;
+                } else {
+                    waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+                }
             }
         }
     }

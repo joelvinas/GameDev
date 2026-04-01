@@ -17,6 +17,8 @@ public:
     static void UpdateAll(float deltaTime);
     static void DrawAll(SDL_Renderer* renderer);
     static void AlertFoundSettlement(Point settlementPos);
+    static void SaveNPCs();
+    static bool LoadNPCs();
 };
 
 #endif

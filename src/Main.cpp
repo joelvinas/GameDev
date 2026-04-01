@@ -7,6 +7,7 @@
 #include <random>
 #include <fstream>
 #include <string>
+#include <filesystem>
 #include "Constants.h"
 #include "MapGeneration.h"
 #include "Navigation.h"
@@ -66,8 +67,7 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r) {
 
 // Save settlement to file
 void SaveSettlement() {
-    const char* base_path = SDL_GetBasePath();
-    std::string path = base_path ? std::string(base_path) + "Settlement.dat" : "bin\\Settlement.dat";
+    std::string path = std::filesystem::exists("bin") ? "bin\\Settlement.dat" : "Settlement.dat";
     std::ofstream outFile(path, std::ios::binary);
     if (outFile.is_open()) {
         outFile.write(reinterpret_cast<const char*>(&settlementPos), sizeof(Point));
@@ -86,8 +86,7 @@ void SaveSettlement() {
 
 // Load settlement from file
 bool LoadSettlement() {
-    const char* base_path = SDL_GetBasePath();
-    std::string path = base_path ? std::string(base_path) + "Settlement.dat" : "bin\\Settlement.dat";
+    std::string path = std::filesystem::exists("bin") ? "bin\\Settlement.dat" : "Settlement.dat";
     std::ifstream inFile(path, std::ios::binary);
     if (inFile.is_open()) {
         inFile.read(reinterpret_cast<char*>(&settlementPos), sizeof(Point));
@@ -300,6 +299,26 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 20, seedString);
 
+    // Draw Agent Inventories
+    int panelY = 50;
+    for (const auto& agent : EntityManager::npcs) {
+        std::string header = agent.name + " (" + agent.currentJob + "):";
+        SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, panelY, header.c_str());
+        panelY += 20;
+        
+        if (agent.inventory.empty()) {
+            SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, "- Empty");
+            panelY += 20;
+        } else {
+            for (const auto& item : agent.inventory) {
+                std::string line = "- " + item.first + ": " + std::to_string(item.second);
+                SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, line.c_str());
+                panelY += 20;
+            }
+        }
+        panelY += 10;
+    }
+
     // Present
     SDL_RenderPresent(as->renderer);
 
@@ -308,6 +327,8 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
 // Quit
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+    SaveSettlement();
+    EntityManager::SaveNPCs();
     if (appstate) {
         AppState* as = (AppState*)appstate;
         delete as;

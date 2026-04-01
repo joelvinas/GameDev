@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <string>
+#include <map>
 #include <SDL3/SDL.h>
 #include "Constants.h"
 
@@ -23,6 +24,14 @@ struct Agent {
     Point housePos = { -1, -1 };
     bool isBuildingHouse = false;
     Point plotPos = { -1, -1 };
+
+    std::vector<std::string> knownJobs = { "Lumberjack" };
+    std::string currentJob = "Lumberjack";
+    bool isGoingToWork = false;
+    bool isWorking = false;
+    bool isReturningHome = false;
+    Point workTarget = { -1, -1 };
+    std::map<std::string, int> inventory;
 
     void Update(float deltaTime);
     void Draw(SDL_Renderer* renderer);
