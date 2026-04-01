@@ -12,6 +12,7 @@
 #include "MapGeneration.h"
 #include "Navigation.h"
 #include "EntityManager.h"
+#include "WorldData.h"
 
 // Global State Implementations
 Point playerPos = { 10, 10 }; 
@@ -194,6 +195,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     float deltaTime = (currentTime - lastTime) / 1e9f;
     lastTime = currentTime;
 
+    // Time and Day/Night Cycle
+    static float secondsPerGameMinute = 10.0f;  // 10 seconds per game minute
+    static float baseIngameHour = 12.0f; // Start at high noon
+    baseIngameHour += deltaTime / secondsPerGameMinute;
+    if (baseIngameHour >= 24.0f) baseIngameHour -= 24.0f; // Loop day
+
     if (isMoving && currentPathIndex + 1 < currentPath.size()) {
         float dist = getDistance(currentPath[currentPathIndex], currentPath[currentPathIndex + 1]);
         if (dist == 0.0f) dist = 1.0f;
@@ -253,6 +260,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }
     }
 
+    // --- Post-Process Lighting Tint ---
+    float normLight = getNormalizedLightLevel(baseIngameHour);
+    SDL_Color tint = GetLightTint(normLight);
+    
+    SDL_SetRenderDrawBlendMode(as->renderer, SDL_BLENDMODE_MOD);
+    SDL_SetRenderDrawColor(as->renderer, tint.r, tint.g, tint.b, tint.a);
+    SDL_FRect mapRect = { 0.0f, 0.0f, (float)MAP_SIZE, (float)MAP_SIZE };
+    SDL_RenderFillRect(as->renderer, &mapRect);
+    SDL_SetRenderDrawBlendMode(as->renderer, SDL_BLENDMODE_NONE);
+    // ----------------------------------
+
     // Draw Path
     if (currentPath.size() > 1) {
         SDL_SetRenderDrawColor(as->renderer, 255, 255, 0, 255);
@@ -299,8 +317,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 20, seedString);
 
+    // Draw Current Time & Phase
+    char timeString[64];
+    int currentHourInt = static_cast<int>(baseIngameHour);
+    SDL_snprintf(timeString, sizeof(timeString), "Time: %02d:00", currentHourInt);
+    SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 40, timeString);
+    
+    std::string timeOfDayStr = "Phase: " + getTimeOfDay(currentHourInt);
+    SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, 60, timeOfDayStr.c_str());
+
     // Draw Agent Inventories
-    int panelY = 50;
+    int panelY = 100;
     for (const auto& agent : EntityManager::npcs) {
         std::string header = agent.name + " (" + agent.currentJob + "):";
         SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, panelY, header.c_str());
