@@ -15,8 +15,6 @@
 #include "EntityManager.h"
 #include "WorldData.h"
 
-
-
 // Global State Implementations
 Point playerPos = { 10, 10 }; 
 Point targetPos = { 10, 10 };

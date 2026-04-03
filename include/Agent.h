@@ -43,6 +43,10 @@ struct Agent {
     Point workTarget = { -1, -1 };
     std::map<int, InventoryItem> inventory;
 
+    void Work(int& targetX, int& targetY);
+    void WanderInSettlement(int& targetX, int& targetY);
+    void WanderInWilderness(int& targetX, int& targetY);  // TODO: Implement this
+
     void Update(float deltaTime);
     void Draw(SDL_Renderer* renderer);
 };
