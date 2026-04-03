@@ -48,7 +48,7 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r);
 // Settlement State
 extern bool settlementFound;
 extern Point settlementPos;
-extern std::map<std::string, Point> agentHouses;
+extern std::map<int, Point> agentHouses;
 void SaveSettlement();
 
 #endif

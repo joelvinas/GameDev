@@ -5,6 +5,17 @@
 #include <chrono>
 #include <fstream>
 #include <filesystem>
+#include "sqlite3.h"
+
+extern const char* SAVE_DATA_FILENAME;
+extern std::string GetDBPath(const std::string& dbName);
+
+static void check_sqlite_res(int res, char* errMsg) {
+    if (res != SQLITE_OK) {
+        SDL_Log("SQLite Error: %s", errMsg);
+        if (errMsg) sqlite3_free(errMsg);
+    }
+}
 
 std::vector<Agent> EntityManager::npcs;
 
@@ -22,13 +33,13 @@ void EntityManager::Initialize() {
                 int ny = 30 + dy;
                 if (isPassable(nx, ny)) {
                     Agent a;
-                    a.name = names[spawned];
+                    //a.name = names[spawned];
                     a.gridPos = { nx, ny };
                     a.realPos = { nx * CELL_SIZE + CELL_SIZE / 2, ny * CELL_SIZE + CELL_SIZE / 2 };
                     a.waitDuration = std::uniform_real_distribution<float>(2.0f, 5.0f)(rng);
-                    if (agentHouses.find(a.name) != agentHouses.end()) {
+                    if (agentHouses.find(a.id) != agentHouses.end()) {
                         a.hasHouse = true;
-                        a.housePos = agentHouses[a.name];
+                        a.housePos = agentHouses[a.id];
                         grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
                         grid[a.housePos.y][a.housePos.x].r = 139;
                         grid[a.housePos.y][a.housePos.x].g = 69;
@@ -58,7 +69,7 @@ void EntityManager::DrawAll(SDL_Renderer* renderer) {
 
 void EntityManager::AlertFoundSettlement(Point settlementPos) {
     for (auto& a : npcs) {
-        std::vector<Point> p = findPath(a.gridPos, settlementPos, a.name);
+        std::vector<Point> p = findPath(a.gridPos, settlementPos, a.id);
         if (p.size() > 1) {
             a.currentPath = p;
             a.isMoving = true;
@@ -69,111 +80,166 @@ void EntityManager::AlertFoundSettlement(Point settlementPos) {
 }
 
 void EntityManager::SaveNPCs() {
-    std::string path = std::filesystem::exists("bin") ? "bin\\NPCs.dat" : "NPCs.dat";
-    std::ofstream outFile(path, std::ios::binary);
-    if (outFile.is_open()) {
-        size_t count = npcs.size();
-        outFile.write(reinterpret_cast<const char*>(&count), sizeof(size_t));
-        for (const auto& a : npcs) {
-            size_t nameLen = a.name.size();
-            outFile.write(reinterpret_cast<const char*>(&nameLen), sizeof(size_t));
-            outFile.write(a.name.c_str(), nameLen);
-            
-            outFile.write(reinterpret_cast<const char*>(&a.gridPos), sizeof(Point));
-            outFile.write(reinterpret_cast<const char*>(&a.hasHouse), sizeof(bool));
-            outFile.write(reinterpret_cast<const char*>(&a.housePos), sizeof(Point));
-            outFile.write(reinterpret_cast<const char*>(&a.isBuildingHouse), sizeof(bool));
-            outFile.write(reinterpret_cast<const char*>(&a.plotPos), sizeof(Point));
-            
-            size_t jobLen = a.currentJob.size();
-            outFile.write(reinterpret_cast<const char*>(&jobLen), sizeof(size_t));
-            outFile.write(a.currentJob.c_str(), jobLen);
+    sqlite3* db;
+    char* errMsg = 0;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    int rc = sqlite3_open(dbPath.c_str(), &db);
 
-            outFile.write(reinterpret_cast<const char*>(&a.isGoingToWork), sizeof(bool));
-            outFile.write(reinterpret_cast<const char*>(&a.isWorking), sizeof(bool));
-            outFile.write(reinterpret_cast<const char*>(&a.isReturningHome), sizeof(bool));
-            outFile.write(reinterpret_cast<const char*>(&a.workTarget), sizeof(Point));
-
-            size_t invSize = a.inventory.size();
-            outFile.write(reinterpret_cast<const char*>(&invSize), sizeof(size_t));
-            for (const auto& item : a.inventory) {
-                size_t itemLen = item.first.size();
-                outFile.write(reinterpret_cast<const char*>(&itemLen), sizeof(size_t));
-                outFile.write(item.first.c_str(), itemLen);
-                outFile.write(reinterpret_cast<const char*>(&item.second), sizeof(int));
-            }
-        }
-        outFile.close();
-        SDL_Log("NPCs saved to %s", path.c_str());
+    if (rc) {
+        SDL_Log("Can't open database: %s", sqlite3_errmsg(db));
+        return;
     }
+
+    const char* createTablesSQL =
+        "CREATE TABLE IF NOT EXISTS NPCs (id INT PRIMARY KEY, name TEXT, gridX INT, gridY INT, hasHouse INT, housePosX INT, housePosY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT);"
+        "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT);";
+
+    rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
+    check_sqlite_res(rc, errMsg);
+
+    sqlite3_stmt* stmtNPC;
+    const char* insertNPCSQL = "INSERT OR REPLACE INTO NPCs (id, name, gridX, gridY, hasHouse, housePosX, housePosY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_prepare_v2(db, insertNPCSQL, -1, &stmtNPC, 0);
+
+    sqlite3_stmt* stmtInv;
+    const char* insertInvSQL = "INSERT OR REPLACE INTO NPCInventory (npc_id, item_id, itemCount) VALUES (?, ?, ?);";
+    sqlite3_prepare_v2(db, insertInvSQL, -1, &stmtInv, 0);
+
+    // Insert NPC data
+    for (const auto& a : npcs) {
+        sqlite3_bind_int(stmtNPC, 1, a.id);
+        sqlite3_bind_text(stmtNPC, 2, a.name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmtNPC, 3, a.gridPos.x);
+        sqlite3_bind_int(stmtNPC, 4, a.gridPos.y);
+        sqlite3_bind_int(stmtNPC, 5, a.hasHouse ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 6, a.housePos.x);
+        sqlite3_bind_int(stmtNPC, 7, a.housePos.y);
+        sqlite3_bind_int(stmtNPC, 8, a.isBuildingHouse ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 9, a.plotPos.x);
+        sqlite3_bind_int(stmtNPC, 10, a.plotPos.y);
+        sqlite3_bind_text(stmtNPC, 11, a.currentJob.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmtNPC, 12, a.isGoingToWork ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 13, a.isWorking ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 14, a.isReturningHome ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 15, a.workTarget.x);
+        sqlite3_bind_int(stmtNPC, 16, a.workTarget.y);
+
+        sqlite3_step(stmtNPC);
+        sqlite3_reset(stmtNPC);
+
+        for (const auto& item : a.inventory) {
+            sqlite3_bind_int(stmtInv, 1, a.id);
+            sqlite3_bind_int(stmtInv, 2, item.first);
+            sqlite3_bind_int(stmtInv, 3, item.second.quantity);
+            
+            sqlite3_step(stmtInv);
+            sqlite3_reset(stmtInv);
+        }
+    }
+
+    sqlite3_finalize(stmtNPC);
+    sqlite3_finalize(stmtInv);
+    sqlite3_close(db);
+    SDL_Log("NPCs saved to SQLite database.");
 }
 
 bool EntityManager::LoadNPCs() {
-    std::string path = std::filesystem::exists("bin") ? "bin\\NPCs.dat" : "NPCs.dat";
-    std::ifstream inFile(path, std::ios::binary);
-    if (inFile.is_open()) {
-        size_t count = 0;
-        if (inFile.read(reinterpret_cast<char*>(&count), sizeof(size_t))) {
-            npcs.clear();
-            for (size_t i = 0; i < count; ++i) {
-                Agent a;
-                size_t nameLen = 0;
-                inFile.read(reinterpret_cast<char*>(&nameLen), sizeof(size_t));
-                a.name.resize(nameLen);
-                inFile.read(&a.name[0], nameLen);
+    sqlite3* db;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) return false;
 
-                inFile.read(reinterpret_cast<char*>(&a.gridPos), sizeof(Point));
-                a.realPos = { a.gridPos.x * CELL_SIZE + CELL_SIZE / 2, a.gridPos.y * CELL_SIZE + CELL_SIZE / 2 };
+    sqlite3_stmt* stmt;
+    std::string selectSQL = "SELECT id, name, gridX, gridY, hasHouse, housePosX, housePosY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY FROM NPCs;";
 
-                inFile.read(reinterpret_cast<char*>(&a.hasHouse), sizeof(bool));
-                inFile.read(reinterpret_cast<char*>(&a.housePos), sizeof(Point));
-                inFile.read(reinterpret_cast<char*>(&a.isBuildingHouse), sizeof(bool));
-                inFile.read(reinterpret_cast<char*>(&a.plotPos), sizeof(Point));
+    if (sqlite3_prepare_v2(db, selectSQL.c_str(), -1, &stmt, 0) == SQLITE_OK) {
+        bool hasRecords = false;
+        std::vector<Agent> loadedNPCs;
+        
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            hasRecords = true;
+            Agent a;
+            a.id = sqlite3_column_int(stmt, 0);
+            a.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            a.gridPos.x = sqlite3_column_int(stmt, 2);
+            a.gridPos.y = sqlite3_column_int(stmt, 3);
+            a.hasHouse = sqlite3_column_int(stmt, 4) != 0;
+            a.housePos.x = sqlite3_column_int(stmt, 5);
+            a.housePos.y = sqlite3_column_int(stmt, 6);
+            a.isBuildingHouse = sqlite3_column_int(stmt, 7) != 0;
+            a.plotPos.x = sqlite3_column_int(stmt, 8);
+            a.plotPos.y = sqlite3_column_int(stmt, 9);
+            
+            const char* jobText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+            a.currentJob = jobText ? jobText : "Lumberjack";
+            
+            a.isGoingToWork = sqlite3_column_int(stmt, 11) != 0;
+            a.isWorking = sqlite3_column_int(stmt, 12) != 0;
+            a.isReturningHome = sqlite3_column_int(stmt, 13) != 0;
+            a.workTarget.x = sqlite3_column_int(stmt, 14);
+            a.workTarget.y = sqlite3_column_int(stmt, 15);
 
-                size_t jobLen = 0;
-                if (inFile.read(reinterpret_cast<char*>(&jobLen), sizeof(size_t))) {
-                    a.currentJob.resize(jobLen);
-                    inFile.read(&a.currentJob[0], jobLen);
-                } else {
-                    a.currentJob = "Lumberjack";
-                }
+            a.realPos = { a.gridPos.x * CELL_SIZE + CELL_SIZE / 2, a.gridPos.y * CELL_SIZE + CELL_SIZE / 2 };
+            a.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
+            a.waitTimer = 0.0f;
+            
+            if (a.hasHouse) {
+                agentHouses[a.id] = a.housePos;
+                grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
+                grid[a.housePos.y][a.housePos.x].r = 139;
+                grid[a.housePos.y][a.housePos.x].g = 69;
+                grid[a.housePos.y][a.housePos.x].b = 19;
+            }
 
-                inFile.read(reinterpret_cast<char*>(&a.isGoingToWork), sizeof(bool));
-                inFile.read(reinterpret_cast<char*>(&a.isWorking), sizeof(bool));
-                inFile.read(reinterpret_cast<char*>(&a.isReturningHome), sizeof(bool));
-                inFile.read(reinterpret_cast<char*>(&a.workTarget), sizeof(Point));
+            loadedNPCs.push_back(a);
+        }
+        sqlite3_finalize(stmt);
 
-                size_t invSize = 0;
-                if (inFile.read(reinterpret_cast<char*>(&invSize), sizeof(size_t))) {
-                    for (size_t j = 0; j < invSize; ++j) {
-                        size_t itemLen = 0;
-                        inFile.read(reinterpret_cast<char*>(&itemLen), sizeof(size_t));
-                        std::string itemName(itemLen, '\0');
-                        inFile.read(&itemName[0], itemLen);
-                        int itemCount = 0;
-                        inFile.read(reinterpret_cast<char*>(&itemCount), sizeof(int));
-                        a.inventory[itemName] = itemCount;
+        if (hasRecords) {
+            // Load Inventories
+
+            // 1. Attach the WorldData database to your existing SaveData connection
+            std::string worldDbPath = GetDBPath("WorldData.db");
+            std::string attachSql = "ATTACH DATABASE '" + worldDbPath + "' AS world;";
+            if (sqlite3_exec(db, attachSql.c_str(), NULL, NULL, NULL) != SQLITE_OK) {
+                SDL_Log("Could not attach WorldData.db: %s", sqlite3_errmsg(db));
+            }
+
+            // 2. Modify your SELECT to join with the Items table in the world schema
+            std::string selectSQL = 
+                "SELECT n.npc_id, n.item_id, n.itemCount, "
+                "w.name, w.maxDurability, w.decayRate, w.weight, w.maxStack "
+                "FROM NPCInventory n "
+                "JOIN world.Items w ON n.item_id = w.id;";
+
+            if (sqlite3_prepare_v2(db, selectSQL.c_str(), -1, &stmt, 0) == SQLITE_OK) {
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    int npcId = sqlite3_column_int(stmt, 0);
+                    int itemId = sqlite3_column_int(stmt, 1);
+                    int itemCount = sqlite3_column_int(stmt, 2);
+                    const char* itemName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+                    int maxDurability = sqlite3_column_int(stmt, 4);
+                    int decayRate = sqlite3_column_int(stmt, 5);
+                    int weight = sqlite3_column_int(stmt, 6);
+                    int maxStack = sqlite3_column_int(stmt, 7);
+                    
+                    for (auto& a : loadedNPCs) {
+                        if (a.id == npcId) {
+                            ItemType type = {itemId, itemName, maxDurability, decayRate, weight, maxStack};
+                            a.inventory[itemId] = InventoryItem(type, itemCount);
+                            break;
+                        }
                     }
                 }
-                
-                a.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
-                a.waitTimer = 0.0f;
-                
-                if (a.hasHouse) {
-                    agentHouses[a.name] = a.housePos;
-                    grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
-                    grid[a.housePos.y][a.housePos.x].r = 139;
-                    grid[a.housePos.y][a.housePos.x].g = 69;
-                    grid[a.housePos.y][a.housePos.x].b = 19;
-                }
-
-                npcs.push_back(a);
+                sqlite3_finalize(stmt);
             }
-            inFile.close();
-            SDL_Log("NPCs loaded from %s", path.c_str());
+            
+            npcs = loadedNPCs;
+            sqlite3_close(db);
+            SDL_Log("NPCs loaded from SQLite database.");
             return true;
         }
-        inFile.close();
     }
+
+    sqlite3_close(db);
     return false;
 }

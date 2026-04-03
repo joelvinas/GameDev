@@ -10,12 +10,12 @@
 #include <SDL3/SDL.h>
 #include "Constants.h"
 
-bool lineOfSight(Point p0, Point p1, std::string agentName = "");
+bool lineOfSight(Point p0, Point p1, int agentId = -1);
 float getSplineVal(float p0, float p1, float p2, float p3, float t);
-std::vector<Point> findPath(Point start, Point end, std::string agentName = "");
-std::vector<Point> stringPull(const std::vector<Point>& path, std::string agentName = "");
+std::vector<Point> findPath(Point start, Point end, int agentId = -1);
+std::vector<Point> stringPull(const std::vector<Point>& path, int agentId = -1);
 float getMoveCost(int x, int y);
 float getDistance(Point a, Point b);
-bool isPassable(int x, int y, std::string agentName = "");
+bool isPassable(int x, int y, int agentId = -1);
 
 #endif

@@ -8,11 +8,14 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include "sqlite3.h"
 #include "Constants.h"
 #include "MapGeneration.h"
 #include "Navigation.h"
 #include "EntityManager.h"
 #include "WorldData.h"
+
+
 
 // Global State Implementations
 Point playerPos = { 10, 10 }; 
@@ -25,10 +28,22 @@ Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SI
 
 bool settlementFound = false;
 Point settlementPos = { -1, -1 };
-std::map<std::string, Point> agentHouses;
+std::map<int, Point> agentHouses;
 
 const char* SETTLEMENT_FILENAME = "Settlement.dat";
 const char* MAP_FILENAME = "GameMap.map";
+const char* WORLD_DATA_FILENAME = "WorldData.db";
+const char* SAVE_DATA_FILENAME = "SaveData.db";
+
+std::string GetDBPath(const std::string& dbName) {
+    // If "data" folder exists linearly here, we are running from Terminal root.
+    // If not, we fall back to relative parent pathing assuming we are in /bin/.
+    if (std::filesystem::exists("data")) {
+        return "data\\" + dbName;
+    } else {
+        return "..\\data\\" + dbName;
+    }
+}
 
 unsigned currentSeed = 0;
 char seedString[64] = "";
@@ -66,57 +81,91 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r) {
     }
 }
 
-// Save settlement to file
-void SaveSettlement() {
-    std::string path = std::filesystem::exists("bin") ? "bin\\Settlement.dat" : "Settlement.dat";
-    std::ofstream outFile(path, std::ios::binary);
-    if (outFile.is_open()) {
-        outFile.write(reinterpret_cast<const char*>(&settlementPos), sizeof(Point));
-        size_t numHouses = agentHouses.size();
-        outFile.write(reinterpret_cast<const char*>(&numHouses), sizeof(size_t));
-        for (const auto& pair : agentHouses) {
-            size_t nameLen = pair.first.size();
-            outFile.write(reinterpret_cast<const char*>(&nameLen), sizeof(size_t));
-            outFile.write(pair.first.c_str(), nameLen);
-            outFile.write(reinterpret_cast<const char*>(&pair.second), sizeof(Point));
-        }
-        outFile.close();
-        SDL_Log("Settlement saved to %s", path.c_str());
+// Helper to handle SQLite errors
+void check_sqlite_res(int res, char* errMsg) {
+    if (res != SQLITE_OK) {
+        SDL_Log("SQLite Error: %s", errMsg);
+        sqlite3_free(errMsg);
     }
 }
 
-// Load settlement from file
-bool LoadSettlement() {
-    std::string path = std::filesystem::exists("bin") ? "bin\\Settlement.dat" : "Settlement.dat";
-    std::ifstream inFile(path, std::ios::binary);
-    if (inFile.is_open()) {
-        inFile.read(reinterpret_cast<char*>(&settlementPos), sizeof(Point));
-        int readBytes = inFile.gcount();
-        if (readBytes == sizeof(Point)) {
-            settlementFound = true;
-            SDL_Log("Settlement loaded from %s: %d, %d", path.c_str(), settlementPos.x, settlementPos.y);
-            
-            size_t numHouses = 0;
-            if (inFile.read(reinterpret_cast<char*>(&numHouses), sizeof(size_t))) {
-                agentHouses.clear();
-                for (size_t i = 0; i < numHouses; ++i) {
-                    size_t nameLen = 0;
-                    inFile.read(reinterpret_cast<char*>(&nameLen), sizeof(size_t));
-                    std::string name(nameLen, '\0');
-                    inFile.read(&name[0], nameLen);
-                    Point housePos;
-                    inFile.read(reinterpret_cast<char*>(&housePos), sizeof(Point));
-                    agentHouses[name] = housePos;
-                }
-            }
-            
-            inFile.close();
-            return true;
-        }
-        inFile.close();
-        SDL_Log("Settlement file %s was empty or corrupted.", path.c_str());
+void SaveSettlement() {
+    sqlite3* db;
+    char* errMsg = 0;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    if (rc) {
+        SDL_Log("Can't open database: %s", sqlite3_errmsg(db));
+        return;
     }
-    return false;
+
+    // 1. Create Tables if they don't exist
+    const char* createTablesSQL =
+        "CREATE TABLE IF NOT EXISTS GlobalState (id INTEGER PRIMARY KEY, settleX INT, settleY INT);"
+        "CREATE TABLE IF NOT EXISTS AgentHouses (NPC_id INT PRIMARY KEY, Settlement_id INT, x INT, y INT);"
+        "DELETE FROM GlobalState;" // Keep only one record for the settlement
+        "DELETE FROM AgentHouses;"; // Clear old houses to overwrite
+
+    rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
+    check_sqlite_res(rc, errMsg);
+
+    // 2. Insert Global Settlement Position
+    std::string insertGlobal = "INSERT INTO GlobalState (id, settleX, settleY) VALUES (1, " +
+        std::to_string(settlementPos.x) + ", " +
+        std::to_string(settlementPos.y) + ");";
+    rc = sqlite3_exec(db, insertGlobal.c_str(), 0, 0, &errMsg);
+
+    // 3. Insert Agent Houses (Using a Prepared Statement for efficiency/safety)
+    sqlite3_stmt* stmt;
+    const char* insertHouseSQL = "INSERT INTO AgentHouses (NPC_id, Settlement_id, x, y) VALUES (?, 1, ?, ?);";
+    sqlite3_prepare_v2(db, insertHouseSQL, -1, &stmt, 0);
+
+    for (const auto& [agentId, pos] : agentHouses) {
+        sqlite3_bind_int(stmt, 1, agentId);
+        sqlite3_bind_int(stmt, 2, pos.x);
+        sqlite3_bind_int(stmt, 3, pos.y);
+
+        sqlite3_step(stmt);
+        sqlite3_reset(stmt); // Reset to reuse the statement
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    SDL_Log("Settlement saved to SQLite database.");
+}
+
+bool LoadSettlement() {
+    sqlite3* db;
+    char* errMsg = 0;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+    sqlite3_stmt* stmt;
+
+    // 1. Load Global State
+    if (sqlite3_prepare_v2(db, "SELECT settleX, settleY FROM GlobalState WHERE id = 1;", -1, &stmt, 0) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            settlementPos.x = sqlite3_column_int(stmt, 0);
+            settlementPos.y = sqlite3_column_int(stmt, 1);
+            settlementFound = true;
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    // 2. Load Agent Houses
+    if (sqlite3_prepare_v2(db, "SELECT NPC_id, x, y FROM AgentHouses WHERE Settlement_id = 1;", -1, &stmt, 0) == SQLITE_OK) {
+        agentHouses.clear();
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int agentId = sqlite3_column_int(stmt, 0);
+            int x = sqlite3_column_int(stmt, 1);
+            int y = sqlite3_column_int(stmt, 2);
+            agentHouses[agentId] = { x, y };
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_close(db);
+    return settlementFound;
 }
 
 // Initialize Game
@@ -307,10 +356,8 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     for (const auto& pair : agentHouses) {
         float hx = pair.second.x * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
         float hy = pair.second.y * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
-        if (!pair.first.empty()) {
-            std::string initial = pair.first.substr(0, 1);
-            SDL_RenderDebugText(as->renderer, hx, hy, initial.c_str());
-        }
+        std::string initial = std::to_string(pair.first);
+        SDL_RenderDebugText(as->renderer, hx, hy, initial.c_str());
     }
     
     // Draw Seed
@@ -337,8 +384,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, "- Empty");
             panelY += 20;
         } else {
-            for (const auto& item : agent.inventory) {
-                std::string line = "- " + item.first + ": " + std::to_string(item.second);
+            for (const auto& pair : agent.inventory) {
+                const auto& invItem = pair.second;
+                std::string line = "- " + invItem.itemType.name + " (" + std::to_string(invItem.itemType.weight * invItem.quantity) + " kg): " + std::to_string(invItem.quantity);
                 SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, line.c_str());
                 panelY += 20;
             }

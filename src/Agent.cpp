@@ -2,8 +2,10 @@
 #include "Navigation.h"
 #include "Constants.h"
 #include "EntityManager.h"
+#include "LootSystem.h"
 #include <random>
 #include <algorithm>
+#include <chrono>
 
 void Agent::Update(float deltaTime) {
     if (isMoving && currentPathIndex + 1 < currentPath.size()) {
@@ -11,6 +13,7 @@ void Agent::Update(float deltaTime) {
         if (dist == 0.0f) dist = 1.0f;
         moveProgress += deltaTime * 4.0f * (1.0f / getMoveCost(gridPos.x, gridPos.y)) / dist; 
 
+        // Update move progress
         if (moveProgress >= 1.0f) {
             moveProgress = 0.0f;
             currentPathIndex++;
@@ -102,7 +105,7 @@ void Agent::Update(float deltaTime) {
                             hasHouse = true;
                             isBuildingHouse = false;
                             housePos = plotPos;
-                            agentHouses[name] = housePos;
+                            agentHouses[id] = housePos;
                             grid[housePos.y][housePos.x].type = OBSTACLE;
                             grid[housePos.y][housePos.x].r = 139;
                             grid[housePos.y][housePos.x].g = 69;
@@ -113,7 +116,7 @@ void Agent::Update(float deltaTime) {
                             for (int adjY = -1; adjY <= 1; adjY++) {
                                 for (int adjX = -1; adjX <= 1; adjX++) {
                                     if (adjX == 0 && adjY == 0) continue;
-                                    if (isPassable(plotPos.x + adjX, plotPos.y + adjY, name)) {
+                                    if (isPassable(plotPos.x + adjX, plotPos.y + adjY, id)) {
                                         targetX = plotPos.x + adjX;
                                         targetY = plotPos.y + adjY;
                                         foundPath = true;
@@ -128,8 +131,10 @@ void Agent::Update(float deltaTime) {
                     
                     if (!isBuildingHouse) {
                         if (hasHouse && currentJob == "Lumberjack") {
+                            // Check if at home
                             bool atHome = std::abs(gridPos.x - housePos.x) <= 1 && std::abs(gridPos.y - housePos.y) <= 1;
                             
+                            // Check if going to work
                             if (!isGoingToWork && !isWorking && !isReturningHome) {
                                 if (atHome) {
                                     bool foundTree = false;
@@ -143,7 +148,7 @@ void Agent::Update(float deltaTime) {
                                                         for (int ay = -1; ay <= 1; ay++) {
                                                             for (int ax = -1; ax <= 1; ax++) {
                                                                 if (ax == 0 && ay == 0) continue;
-                                                                if (isPassable(tx + ax, ty + ay, name)) {
+                                                                if (isPassable(tx + ax, ty + ay, id)) {
                                                                     workTarget = {tx + ax, ty + ay};
                                                                     isGoingToWork = true;
                                                                     targetX = workTarget.x;
@@ -175,7 +180,24 @@ void Agent::Update(float deltaTime) {
                                 isGoingToWork = false;
                                 isWorking = true;
                             } else if (isWorking) {
-                                inventory["Lumber"] += 10;
+                                try {
+                                    extern std::string GetDBPath(const std::string& dbName);
+                                    LootTable treeLoot = LoadLootTableFromDB(GetDBPath("WorldData.db"), 1); // 1 = Tree
+                                    
+                                    std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
+                                    auto drops = RollLootTable(treeLoot, rng);
+                                    
+                                    for (const auto& drop : drops) {
+                                        int itemId = drop.first.id;
+                                        int qty = drop.second;
+                                        if (inventory.find(itemId) == inventory.end()) {
+                                            inventory[itemId] = InventoryItem(drop.first, 0);
+                                        }
+                                        inventory[itemId].quantity += qty;
+                                    }
+                                } catch (const std::exception& e) {
+                                    SDL_Log("Loot error: %s", e.what());
+                                }
                                 isWorking = false;
                                 isReturningHome = true;
                                 targetX = housePos.x;
@@ -186,6 +208,8 @@ void Agent::Update(float deltaTime) {
                                 targetY = housePos.y;
                             }
                         } else {
+                            // Move to random position in settlement
+                            // TODO: Move this to a function
                             int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
                             int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
                             if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
@@ -201,8 +225,8 @@ void Agent::Update(float deltaTime) {
                     targetY = gridPos.y + dy;
                 }
 
-                if (isPassable(targetX, targetY, name) && (targetX != gridPos.x || targetY != gridPos.y)) {
-                    std::vector<Point> p = findPath(gridPos, {targetX, targetY}, name);
+                if (isPassable(targetX, targetY, id) && (targetX != gridPos.x || targetY != gridPos.y)) {
+                    std::vector<Point> p = findPath(gridPos, {targetX, targetY}, id);
                     if (p.size() > 1) {
                         currentPath = p;
                         isMoving = true;
