@@ -5,7 +5,146 @@
 #include "LootSystem.h"
 #include <random>
 #include <algorithm>
+#include "sqlite3.h"
 #include <chrono>
+
+void Agent::BuildNewHouse(int& targetX, int& targetY) {
+    int dX = std::abs(gridPos.x - plotPos.x);
+    int dY = std::abs(gridPos.y - plotPos.y);
+    if (dX <= 1 && dY <= 1 && (dX != 0 || dY != 0)) {
+        hasHouse = true;
+        isBuildingHouse = false;
+        housePos = plotPos;
+
+        extern const char* SAVE_DATA_FILENAME;
+        extern std::string GetDBPath(const std::string & dbName);
+        sqlite3* db;
+        if (sqlite3_open(GetDBPath(SAVE_DATA_FILENAME).c_str(), &db) == SQLITE_OK) {
+            sqlite3_stmt* stmt;
+            const char* insertSql = "INSERT INTO Structures (name, structureType, x, y) VALUES (?, ?, ?, ?);";
+            if (sqlite3_prepare_v2(db, insertSql, -1, &stmt, 0) == SQLITE_OK) {
+                std::string houseName = name + "'s House";
+                sqlite3_bind_text(stmt, 1, houseName.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, 2, 1);
+                sqlite3_bind_int(stmt, 3, housePos.x);
+                sqlite3_bind_int(stmt, 4, housePos.y);
+                sqlite3_step(stmt);
+                sqlite3_finalize(stmt);
+
+                long long newId = sqlite3_last_insert_rowid(db);
+                ownedStructureIds.insert(static_cast<int>(newId));
+            }
+            sqlite3_close(db);
+        }
+
+        grid[housePos.y][housePos.x].type = OBSTACLE;
+        grid[housePos.y][housePos.x].r = 139;
+        grid[housePos.y][housePos.x].g = 69;
+        grid[housePos.y][housePos.x].b = 19;
+        SaveSettlement();
+    }
+    else {
+        // Find a path to the plot
+        FindPathway(targetX, targetY, plotPos, id);
+    }
+}
+
+void Agent::BuildSettlement(int& targetX, int& targetY){
+    bool validSettlement = true;
+    for (int dy = -SETTLEMENT_RADIUS; dy <= SETTLEMENT_RADIUS; dy++) {
+        for (int dx = -SETTLEMENT_RADIUS; dx <= SETTLEMENT_RADIUS; dx++) {
+            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+                int cx = gridPos.x + dx;
+                int cy = gridPos.y + dy;
+                if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE) {
+                    if (grid[cy][cx].type == WATER) {
+                        validSettlement = false;
+                        break;
+                    }
+                } else {
+                    validSettlement = false;
+                    break;
+                }
+            }
+        }
+        if (!validSettlement) break;
+    }
+
+    // If the current position is a valid settlement position, set it as the settlement position
+    if (validSettlement) {
+        settlementFound = true;
+        settlementPos = gridPos;
+        SaveSettlement();
+        EntityManager::AlertFoundSettlement(settlementPos);
+    }
+}
+
+void Agent::FindHousePlot(Point& plotPos, int& id) {
+    for (int attempt = 0; attempt < 50; attempt++) {
+        int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+        int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+        if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+            int hx = settlementPos.x + dx;
+            int hy = settlementPos.y + dy;
+            if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE && grid[hy][hx].type == GRASS) {
+                isBuildingHouse = true;
+                plotPos = {hx, hy};
+                break;
+            }
+        }
+    }
+}
+
+bool Agent::FindTarget(int& targetX, int& targetY, int& id, CellType targetType) {
+    bool foundTarget = false;
+    for (int r = 1; r < 30; ++r) {
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                if (std::abs(dx) == r || std::abs(dy) == r) {
+                    int tx = gridPos.x + dx;
+                    int ty = gridPos.y + dy;
+                    if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE && grid[ty][tx].type == targetType) {
+                        for (int ay = -1; ay <= 1; ay++) {
+                            for (int ax = -1; ax <= 1; ax++) {
+                                if (ax == 0 && ay == 0) continue;
+                                if (isPassable(tx + ax, ty + ay, id)) {
+                                    workTarget = {tx + ax, ty + ay};
+                                    isGoingToWork = true;
+                                    targetX = workTarget.x;
+                                    targetY = workTarget.y;
+                                    foundTarget = true;
+                                    break;
+                                }
+                            }
+                            if (foundTarget) break;
+                        }
+                    }
+                }
+                if (foundTarget) break;
+            }
+            if (foundTarget) break;
+        }
+        if (foundTarget) break;
+    }
+    return foundTarget;
+}
+
+void Agent::FindPathway(int& targetX, int& targetY, Point& plotPos, int& id) {
+    bool foundPath = false;
+    for (int adjY = -1; adjY <= 1; adjY++) {
+        for (int adjX = -1; adjX <= 1; adjX++) {
+            if (adjX == 0 && adjY == 0) continue;
+            if (isPassable(plotPos.x + adjX, plotPos.y + adjY, id)) {
+                targetX = plotPos.x + adjX;
+                targetY = plotPos.y + adjY;
+                foundPath = true;
+                break;
+            }
+        }
+        if (foundPath) break;
+    }
+    if (!foundPath) isBuildingHouse = false;
+}
 
 void Agent::WanderInSettlement(int& targetX, int& targetY) {
     // Move to random position in settlement
@@ -61,6 +200,7 @@ void Agent::Update(float deltaTime) {
             }
         }
 
+        // Update position
         if (isMoving) {
             int i0 = std::max(0, (int)currentPathIndex - 1);
             int i1 = currentPathIndex;
@@ -87,81 +227,20 @@ void Agent::Update(float deltaTime) {
             if (!isMoving) {
                 int targetX = gridPos.x;
                 int targetY = gridPos.y;
-                if (!settlementFound && grid[gridPos.y][gridPos.x].type == GRASS) {
-                    bool validSettlement = true;
-                    for (int dy = -SETTLEMENT_RADIUS; dy <= SETTLEMENT_RADIUS; dy++) {
-                        for (int dx = -SETTLEMENT_RADIUS; dx <= SETTLEMENT_RADIUS; dx++) {
-                            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
-                                int cx = gridPos.x + dx;
-                                int cy = gridPos.y + dy;
-                                if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE) {
-                                    if (grid[cy][cx].type == WATER) {
-                                        validSettlement = false;
-                                        break;
-                                    }
-                                } else {
-                                    validSettlement = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!validSettlement) break;
-                    }
 
-                    if (validSettlement) {
-                        settlementFound = true;
-                        settlementPos = gridPos;
-                        SaveSettlement();
-                        EntityManager::AlertFoundSettlement(settlementPos);
-                    }
+                // Check if the current position is a valid settlement position
+                if (!settlementFound && grid[gridPos.y][gridPos.x].type == GRASS) {
+                    BuildSettlement(targetX, targetY);
                 }
 
-                if (settlementFound) {
+                if (settlementFound) { 
                     if (!hasHouse && !isBuildingHouse) {
-                        for (int attempt = 0; attempt < 50; attempt++) {
-                            int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                            int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
-                            if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
-                                int hx = settlementPos.x + dx;
-                                int hy = settlementPos.y + dy;
-                                if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE && grid[hy][hx].type == GRASS) {
-                                    isBuildingHouse = true;
-                                    plotPos = {hx, hy};
-                                    break;
-                                }
-                            }
-                        }
+                        // Find a plot for the house
+                        FindHousePlot(plotPos, id);
                     }
 
                     if (isBuildingHouse && !isMoving) {
-                        int dX = std::abs(gridPos.x - plotPos.x);
-                        int dY = std::abs(gridPos.y - plotPos.y);
-                        if (dX <= 1 && dY <= 1 && (dX != 0 || dY != 0)) {
-                            hasHouse = true;
-                            isBuildingHouse = false;
-                            housePos = plotPos;
-                            agentHouses[id] = housePos;
-                            grid[housePos.y][housePos.x].type = OBSTACLE;
-                            grid[housePos.y][housePos.x].r = 139;
-                            grid[housePos.y][housePos.x].g = 69;
-                            grid[housePos.y][housePos.x].b = 19;
-                            SaveSettlement();
-                        } else {
-                            bool foundPath = false;
-                            for (int adjY = -1; adjY <= 1; adjY++) {
-                                for (int adjX = -1; adjX <= 1; adjX++) {
-                                    if (adjX == 0 && adjY == 0) continue;
-                                    if (isPassable(plotPos.x + adjX, plotPos.y + adjY, id)) {
-                                        targetX = plotPos.x + adjX;
-                                        targetY = plotPos.y + adjY;
-                                        foundPath = true;
-                                        break;
-                                    }
-                                }
-                                if (foundPath) break;
-                            }
-                            if (!foundPath) isBuildingHouse = false;
-                        }
+                        BuildNewHouse(targetX, targetY);
                     }
                     
                     if (!isBuildingHouse) {
@@ -172,37 +251,10 @@ void Agent::Update(float deltaTime) {
                             // Check if going to work
                             if (!isGoingToWork && !isWorking && !isReturningHome) {
                                 if (atHome) {
-                                    bool foundTree = false;
-                                    for (int r = 1; r < 30; ++r) {
-                                        for (int dy = -r; dy <= r; dy++) {
-                                            for (int dx = -r; dx <= r; dx++) {
-                                                if (std::abs(dx) == r || std::abs(dy) == r) {
-                                                    int tx = gridPos.x + dx;
-                                                    int ty = gridPos.y + dy;
-                                                    if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE && grid[ty][tx].type == TREE) {
-                                                        for (int ay = -1; ay <= 1; ay++) {
-                                                            for (int ax = -1; ax <= 1; ax++) {
-                                                                if (ax == 0 && ay == 0) continue;
-                                                                if (isPassable(tx + ax, ty + ay, id)) {
-                                                                    workTarget = {tx + ax, ty + ay};
-                                                                    isGoingToWork = true;
-                                                                    targetX = workTarget.x;
-                                                                    targetY = workTarget.y;
-                                                                    foundTree = true;
-                                                                    break;
-                                                                }
-                                                            }
-                                                            if (foundTree) break;
-                                                        }
-                                                    }
-                                                }
-                                                if (foundTree) break;
-                                            }
-                                            if (foundTree) break;
-                                        }
-                                        if (foundTree) break;
-                                    }
-                                    if (!foundTree) {
+                                    // Find a target to chop
+                                    bool foundTarget = FindTarget(targetX, targetY, id, TREE);
+                                    
+                                    if (!foundTarget) {
                                         targetX = housePos.x;
                                         targetY = housePos.y;
                                     }

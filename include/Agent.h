@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <unordered_set>
 #include <SDL3/SDL.h>
 #include "Constants.h"
 #include "ItemInfo.h"
@@ -34,6 +35,8 @@ struct Agent {
     Point housePos = { -1, -1 };
     bool isBuildingHouse = false;
     Point plotPos = { -1, -1 };
+   
+    std::unordered_set<int> ownedStructureIds; // Store the primary keys of the buildings the NPC owns
 
     std::vector<std::string> knownJobs = { "Lumberjack" };
     std::string currentJob = "Lumberjack";
@@ -43,6 +46,11 @@ struct Agent {
     Point workTarget = { -1, -1 };
     std::map<int, InventoryItem> inventory;
 
+    void BuildNewHouse(int& targetX, int& targetY);
+    void BuildSettlement(int& targetX, int& targetY);
+    void FindHousePlot(Point& plotPos, int& id);
+    bool FindTarget(int& targetX, int& targetY, int& id, CellType targetType);
+    void FindPathway(int& targetX, int& targetY, Point& plotPos, int& id);
     void Work(int& targetX, int& targetY);
     void WanderInSettlement(int& targetX, int& targetY);
     void WanderInWilderness(int& targetX, int& targetY);  // TODO: Implement this

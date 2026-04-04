@@ -17,6 +17,7 @@ constexpr int GRID_SIZE = 60;
 constexpr int CELL_SIZE = MAP_SIZE / GRID_SIZE;
 constexpr float PLAYER_RADIUS = 5.0f;
 constexpr float MUD_SPEED = 2.0f;
+constexpr int SETTLEMENT_ID = 1;
 
 // Settlement
 constexpr int SETTLEMENT_RADIUS = 3;
@@ -28,6 +29,11 @@ struct Point {
     int x, y;
     bool operator==(const Point& other) const { return x == other.x && y == other.y; }
     bool operator!=(const Point& other) const { return !(*this == other); }
+};
+
+struct Building {
+    int settlementId;
+    Point address;
 };
 
 enum CellType { GRASS = 0, OBSTACLE, SWAMP, WATER, MOUNTAIN, TREE };
@@ -48,7 +54,6 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r);
 // Settlement State
 extern bool settlementFound;
 extern Point settlementPos;
-extern std::map<int, Point> agentHouses;
 void SaveSettlement();
 
 #endif

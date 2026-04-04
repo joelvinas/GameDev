@@ -37,14 +37,6 @@ void EntityManager::Initialize() {
                     a.gridPos = { nx, ny };
                     a.realPos = { nx * CELL_SIZE + CELL_SIZE / 2, ny * CELL_SIZE + CELL_SIZE / 2 };
                     a.waitDuration = std::uniform_real_distribution<float>(2.0f, 5.0f)(rng);
-                    if (agentHouses.find(a.id) != agentHouses.end()) {
-                        a.hasHouse = true;
-                        a.housePos = agentHouses[a.id];
-                        grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
-                        grid[a.housePos.y][a.housePos.x].r = 139;
-                        grid[a.housePos.y][a.housePos.x].g = 69;
-                        grid[a.housePos.y][a.housePos.x].b = 19;
-                    }
                     npcs.push_back(a);
                     spawned++;
                     if (spawned >= 3) break;
@@ -91,15 +83,21 @@ void EntityManager::SaveNPCs() {
     }
 
     const char* createTablesSQL =
-        "CREATE TABLE IF NOT EXISTS NPCs (id INT PRIMARY KEY, name TEXT, gridX INT, gridY INT, hasHouse INT, housePosX INT, housePosY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT);"
-        "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT);";
+        "CREATE TABLE IF NOT EXISTS NPCs (id INT PRIMARY KEY, name TEXT, gridX INT, gridY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT);"
+        "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT);"
+        "CREATE TABLE IF NOT EXISTS NPCStructures (npc_id INT, structure_id INT, PRIMARY KEY(npc_id, structure_id));"
+        "CREATE TABLE IF NOT EXISTS Structures (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, structureType INTEGER, x INT, y INT);";
 
     rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
     check_sqlite_res(rc, errMsg);
 
     sqlite3_stmt* stmtNPC;
-    const char* insertNPCSQL = "INSERT OR REPLACE INTO NPCs (id, name, gridX, gridY, hasHouse, housePosX, housePosY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    const char* insertNPCSQL = "INSERT OR REPLACE INTO NPCs (id, name, gridX, gridY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_prepare_v2(db, insertNPCSQL, -1, &stmtNPC, 0);
+
+    sqlite3_stmt* stmtStructure;
+    const char* insertStructureSQL = "INSERT OR REPLACE INTO NPCStructures (npc_id, structure_id) VALUES (?, ?);";
+    sqlite3_prepare_v2(db, insertStructureSQL, -1, &stmtStructure, 0);
 
     sqlite3_stmt* stmtInv;
     const char* insertInvSQL = "INSERT OR REPLACE INTO NPCInventory (npc_id, item_id, itemCount) VALUES (?, ?, ?);";
@@ -111,21 +109,25 @@ void EntityManager::SaveNPCs() {
         sqlite3_bind_text(stmtNPC, 2, a.name.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_int(stmtNPC, 3, a.gridPos.x);
         sqlite3_bind_int(stmtNPC, 4, a.gridPos.y);
-        sqlite3_bind_int(stmtNPC, 5, a.hasHouse ? 1 : 0);
-        sqlite3_bind_int(stmtNPC, 6, a.housePos.x);
-        sqlite3_bind_int(stmtNPC, 7, a.housePos.y);
-        sqlite3_bind_int(stmtNPC, 8, a.isBuildingHouse ? 1 : 0);
-        sqlite3_bind_int(stmtNPC, 9, a.plotPos.x);
-        sqlite3_bind_int(stmtNPC, 10, a.plotPos.y);
-        sqlite3_bind_text(stmtNPC, 11, a.currentJob.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_int(stmtNPC, 12, a.isGoingToWork ? 1 : 0);
-        sqlite3_bind_int(stmtNPC, 13, a.isWorking ? 1 : 0);
-        sqlite3_bind_int(stmtNPC, 14, a.isReturningHome ? 1 : 0);
-        sqlite3_bind_int(stmtNPC, 15, a.workTarget.x);
-        sqlite3_bind_int(stmtNPC, 16, a.workTarget.y);
+        sqlite3_bind_int(stmtNPC, 5, a.isBuildingHouse ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 6, a.plotPos.x);
+        sqlite3_bind_int(stmtNPC, 7, a.plotPos.y);
+        sqlite3_bind_text(stmtNPC, 8, a.currentJob.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmtNPC, 9, a.isGoingToWork ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 10, a.isWorking ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 11, a.isReturningHome ? 1 : 0);
+        sqlite3_bind_int(stmtNPC, 12, a.workTarget.x);
+        sqlite3_bind_int(stmtNPC, 13, a.workTarget.y);
 
         sqlite3_step(stmtNPC);
         sqlite3_reset(stmtNPC);
+
+        for (int structId : a.ownedStructureIds) {
+            sqlite3_bind_int(stmtStructure, 1, a.id);
+            sqlite3_bind_int(stmtStructure, 2, structId);
+            sqlite3_step(stmtStructure);
+            sqlite3_reset(stmtStructure);
+        }
 
         for (const auto& item : a.inventory) {
             sqlite3_bind_int(stmtInv, 1, a.id);
@@ -138,6 +140,7 @@ void EntityManager::SaveNPCs() {
     }
 
     sqlite3_finalize(stmtNPC);
+    sqlite3_finalize(stmtStructure);
     sqlite3_finalize(stmtInv);
     sqlite3_close(db);
     SDL_Log("NPCs saved to SQLite database.");
@@ -149,7 +152,7 @@ bool EntityManager::LoadNPCs() {
     if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) return false;
 
     sqlite3_stmt* stmt;
-    std::string selectSQL = "SELECT id, name, gridX, gridY, hasHouse, housePosX, housePosY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY FROM NPCs;";
+    std::string selectSQL = "SELECT id, name, gridX, gridY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY FROM NPCs;";
 
     if (sqlite3_prepare_v2(db, selectSQL.c_str(), -1, &stmt, 0) == SQLITE_OK) {
         bool hasRecords = false;
@@ -162,32 +165,51 @@ bool EntityManager::LoadNPCs() {
             a.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
             a.gridPos.x = sqlite3_column_int(stmt, 2);
             a.gridPos.y = sqlite3_column_int(stmt, 3);
-            a.hasHouse = sqlite3_column_int(stmt, 4) != 0;
-            a.housePos.x = sqlite3_column_int(stmt, 5);
-            a.housePos.y = sqlite3_column_int(stmt, 6);
-            a.isBuildingHouse = sqlite3_column_int(stmt, 7) != 0;
-            a.plotPos.x = sqlite3_column_int(stmt, 8);
-            a.plotPos.y = sqlite3_column_int(stmt, 9);
+            a.isBuildingHouse = sqlite3_column_int(stmt, 4) != 0;
+            a.plotPos.x = sqlite3_column_int(stmt, 5);
+            a.plotPos.y = sqlite3_column_int(stmt, 6);
             
-            const char* jobText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+            const char* jobText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
             a.currentJob = jobText ? jobText : "Lumberjack";
             
-            a.isGoingToWork = sqlite3_column_int(stmt, 11) != 0;
-            a.isWorking = sqlite3_column_int(stmt, 12) != 0;
-            a.isReturningHome = sqlite3_column_int(stmt, 13) != 0;
-            a.workTarget.x = sqlite3_column_int(stmt, 14);
-            a.workTarget.y = sqlite3_column_int(stmt, 15);
+            a.isGoingToWork = sqlite3_column_int(stmt, 8) != 0;
+            a.isWorking = sqlite3_column_int(stmt, 9) != 0;
+            a.isReturningHome = sqlite3_column_int(stmt, 10) != 0;
+            a.workTarget.x = sqlite3_column_int(stmt, 11);
+            a.workTarget.y = sqlite3_column_int(stmt, 12);
 
             a.realPos = { a.gridPos.x * CELL_SIZE + CELL_SIZE / 2, a.gridPos.y * CELL_SIZE + CELL_SIZE / 2 };
             a.waitDuration = (std::rand() % 400) / 100.0f + 2.0f;
             a.waitTimer = 0.0f;
-            
-            if (a.hasHouse) {
-                agentHouses[a.id] = a.housePos;
-                grid[a.housePos.y][a.housePos.x].type = OBSTACLE;
-                grid[a.housePos.y][a.housePos.x].r = 139;
-                grid[a.housePos.y][a.housePos.x].g = 69;
-                grid[a.housePos.y][a.housePos.x].b = 19;
+            a.hasHouse = false;
+            a.housePos = {-1, -1};
+
+            sqlite3_stmt* stmtStructures;
+            const char* selectStructuresSQL = 
+                "SELECT ns.structure_id, s.x, s.y, s.structureType "
+                "FROM NPCStructures ns "
+                "JOIN Structures s ON ns.structure_id = s.id "
+                "WHERE ns.npc_id = ?;";
+
+            if (sqlite3_prepare_v2(db, selectStructuresSQL, -1, &stmtStructures, nullptr) == SQLITE_OK) {
+                sqlite3_bind_int(stmtStructures, 1, a.id);
+                while (sqlite3_step(stmtStructures) == SQLITE_ROW) {
+                    int structId = sqlite3_column_int(stmtStructures, 0);
+                    a.ownedStructureIds.insert(structId);
+                    
+                    int sx = sqlite3_column_int(stmtStructures, 1);
+                    int sy = sqlite3_column_int(stmtStructures, 2);
+                    int structureType = sqlite3_column_int(stmtStructures, 3);
+                    if (structureType == 1) { // 1 = House
+                        a.hasHouse = true;
+                        a.housePos = { sx, sy };
+                        grid[sy][sx].type = OBSTACLE;
+                        grid[sy][sx].r = 139;
+                        grid[sy][sx].g = 69;
+                        grid[sy][sx].b = 19;
+                    }
+                }
+                sqlite3_finalize(stmtStructures);
             }
 
             loadedNPCs.push_back(a);

@@ -1,6 +1,7 @@
 #include "Navigation.h"
 #include "MapGeneration.h"
 #include "Constants.h"
+#include "EntityManager.h"
 #include <queue>
 #include <cmath>
 #include <algorithm>
@@ -105,9 +106,10 @@ bool isPassable(int x, int y, int agentId) {
     CellType t = grid[y][x].type;
     if (t == OBSTACLE) {
         if (agentId != -1) {
-            auto it = agentHouses.find(agentId);
-            if (it != agentHouses.end() && it->second.x == x && it->second.y == y) {
-                return true;
+            for (const auto& a : EntityManager::npcs) {
+                if (a.id == agentId && a.hasHouse && a.housePos.x == x && a.housePos.y == y) {
+                    return true;
+                }
             }
         }
         return false;

@@ -26,8 +26,6 @@ Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SI
 
 bool settlementFound = false;
 Point settlementPos = { -1, -1 };
-std::map<int, Point> agentHouses;
-
 const char* SETTLEMENT_FILENAME = "Settlement.dat";
 const char* MAP_FILENAME = "GameMap.map";
 const char* WORLD_DATA_FILENAME = "WorldData.db";
@@ -101,9 +99,7 @@ void SaveSettlement() {
     // 1. Create Tables if they don't exist
     const char* createTablesSQL =
         "CREATE TABLE IF NOT EXISTS GlobalState (id INTEGER PRIMARY KEY, settleX INT, settleY INT);"
-        "CREATE TABLE IF NOT EXISTS AgentHouses (NPC_id INT PRIMARY KEY, Settlement_id INT, x INT, y INT);"
-        "DELETE FROM GlobalState;" // Keep only one record for the settlement
-        "DELETE FROM AgentHouses;"; // Clear old houses to overwrite
+        "DELETE FROM GlobalState;"; // Keep only one record for the settlement
 
     rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
     check_sqlite_res(rc, errMsg);
@@ -114,21 +110,7 @@ void SaveSettlement() {
         std::to_string(settlementPos.y) + ");";
     rc = sqlite3_exec(db, insertGlobal.c_str(), 0, 0, &errMsg);
 
-    // 3. Insert Agent Houses (Using a Prepared Statement for efficiency/safety)
-    sqlite3_stmt* stmt;
-    const char* insertHouseSQL = "INSERT INTO AgentHouses (NPC_id, Settlement_id, x, y) VALUES (?, 1, ?, ?);";
-    sqlite3_prepare_v2(db, insertHouseSQL, -1, &stmt, 0);
-
-    for (const auto& [agentId, pos] : agentHouses) {
-        sqlite3_bind_int(stmt, 1, agentId);
-        sqlite3_bind_int(stmt, 2, pos.x);
-        sqlite3_bind_int(stmt, 3, pos.y);
-
-        sqlite3_step(stmt);
-        sqlite3_reset(stmt); // Reset to reuse the statement
-    }
-
-    sqlite3_finalize(stmt);
+    sqlite3_close(db);
     sqlite3_close(db);
     SDL_Log("Settlement saved to SQLite database.");
 }
@@ -146,18 +128,6 @@ bool LoadSettlement() {
             settlementPos.x = sqlite3_column_int(stmt, 0);
             settlementPos.y = sqlite3_column_int(stmt, 1);
             settlementFound = true;
-        }
-        sqlite3_finalize(stmt);
-    }
-
-    // 2. Load Agent Houses
-    if (sqlite3_prepare_v2(db, "SELECT NPC_id, x, y FROM AgentHouses WHERE Settlement_id = 1;", -1, &stmt, 0) == SQLITE_OK) {
-        agentHouses.clear();
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            int agentId = sqlite3_column_int(stmt, 0);
-            int x = sqlite3_column_int(stmt, 1);
-            int y = sqlite3_column_int(stmt, 2);
-            agentHouses[agentId] = { x, y };
         }
         sqlite3_finalize(stmt);
     }
@@ -351,11 +321,13 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     
     // Draw House Owner Initials
     SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, 255);
-    for (const auto& pair : agentHouses) {
-        float hx = pair.second.x * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
-        float hy = pair.second.y * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
-        std::string initial = std::to_string(pair.first);
-        SDL_RenderDebugText(as->renderer, hx, hy, initial.c_str());
+    for (const auto& a : EntityManager::npcs) {
+        if (a.hasHouse) {
+            float hx = a.housePos.x * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
+            float hy = a.housePos.y * CELL_SIZE + CELL_SIZE / 2.0f - 4.0f;
+            std::string initial = std::to_string(a.id);
+            SDL_RenderDebugText(as->renderer, hx, hy, initial.c_str());
+        }
     }
     
     // Draw Seed
