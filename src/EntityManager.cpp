@@ -7,8 +7,8 @@
 #include <filesystem>
 #include "sqlite3.h"
 
-extern const char* SAVE_DATA_FILENAME;
-extern std::string GetDBPath(const std::string& dbName);
+
+
 
 static void check_sqlite_res(int res, char* errMsg) {
     if (res != SQLITE_OK) {

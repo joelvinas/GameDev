@@ -8,6 +8,8 @@
 #include <SDL3/SDL.h>
 #include <map>
 #include <string>
+#include <filesystem>
+
 // Core Map and UI
 constexpr int GIVEN_SEED = 0;
 constexpr int WINDOW_WIDTH = 1280;
@@ -21,8 +23,25 @@ constexpr int SETTLEMENT_ID = 1;
 
 // Settlement
 constexpr int SETTLEMENT_RADIUS = 3;
-extern const char* SETTLEMENT_FILENAME;
-extern const char* MAP_FILENAME;
+
+// Database filenames
+constexpr const char* SETTLEMENT_FILENAME = "Settlement.dat";
+//constexpr const char* MAP_FILENAME = "GameMap.map";
+constexpr const char* WORLD_DATA_FILENAME = "WorldData.db";
+constexpr const char* SAVE_DATA_FILENAME = "SaveData.db";
+constexpr const char* MAP_DATA_FILENAME = "MapData.db";
+
+// Database helper
+inline std::string GetDBPath(const std::string& dbName) {
+    // If "data" folder exists linearly here, we are running from Terminal root.
+    // If not, we fall back to relative parent pathing assuming we are in /bin/.
+    if (std::filesystem::exists("data")) {
+        return "data\\" + dbName;
+    } else {
+        return "..\\data\\" + dbName;
+    }
+}
+
 
 // Core Types
 struct Point {

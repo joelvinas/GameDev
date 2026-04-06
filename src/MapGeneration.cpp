@@ -3,6 +3,9 @@
 #include <fstream>
 #include <algorithm>
 #include <random>
+#include <sqlite3.h>
+#include <vector>
+#include "Constants.h"
 
 // Terrain Config
 const float TERRAIN_NOISE_SCALE = 3.0f;       
@@ -69,38 +72,93 @@ float fractalNoise(float x, float y, unsigned seed, int octaves) {
     return (normalized + 1.0f) * 0.5f; 
 }
 
-std::string GetMapFilePath() {
-    const char* basePath = SDL_GetBasePath();
-    std::string path;
-    if (basePath) {
-        path = std::string(basePath) + MAP_FILENAME;
-        SDL_free((void*)basePath);
-    } else {
-        path = MAP_FILENAME; 
+//std::string GetMapFilePath() {
+//    const char* basePath = SDL_GetBasePath();
+//    std::string path;
+//    if (basePath) {
+//        path = std::string(basePath) + MAP_FILENAME;
+//        SDL_free((void*)basePath);
+//    } else {
+//        path = MAP_FILENAME; 
+//    }
+//    return path;
+//}
+
+void SaveMapToDB() {
+    sqlite3* db;
+    int rc = sqlite3_open(GetDBPath(MAP_DATA_FILENAME).c_str(), &db);
+
+    if (rc != SQLITE_OK) {
+        SDL_Log("Cannot open database: %s", sqlite3_errmsg(db));
+        return;
     }
-    return path;
+
+    // 1. Create the table
+    const char* createTableSQL = 
+        "CREATE TABLE IF NOT EXISTS map_cells ("
+        "x INTEGER, y INTEGER, altitude REAL, type INTEGER, r INTEGER, g INTEGER, b INTEGER,"
+        "PRIMARY KEY (x, y));";
+    sqlite3_exec(db, createTableSQL, nullptr, nullptr, nullptr);
+
+    // 2. Start a Transaction (Crucial for performance!)
+    sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+
+    // 3. Prepare the Insert Statement
+    const char* insertSQL = "INSERT OR REPLACE INTO map_cells (x, y, altitude, type, r, g, b) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nullptr);
+
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            Cell& cell = grid[y][x];
+            sqlite3_bind_int(stmt, 1, x);
+            sqlite3_bind_int(stmt, 2, y);
+            sqlite3_bind_double(stmt, 3, cell.altitude);
+            sqlite3_bind_int(stmt, 4, cell.type);
+            sqlite3_bind_int(stmt, 5, cell.r);
+            sqlite3_bind_int(stmt, 6, cell.g);
+            sqlite3_bind_int(stmt, 7, cell.b);
+
+            sqlite3_step(stmt);
+            sqlite3_reset(stmt); // Reset for next iteration
+        }
+    }
+
+    // 4. Finalize and Commit
+    sqlite3_finalize(stmt);
+    sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    SDL_Log("Map saved to SQLite database successfully.");
 }
 
-void SaveMap() {
-    std::string path = GetMapFilePath();
-    std::ofstream outFile(path, std::ios::binary);
-    if (outFile.is_open()) {
-        outFile.write(reinterpret_cast<const char*>(grid), sizeof(grid));
-        outFile.close();
-        SDL_Log("Map saved successfully to %s", path.c_str());
-    }
-}
+bool LoadMapFromDB() {
+    sqlite3* db;
+    if (sqlite3_open(GetDBPath(MAP_DATA_FILENAME).c_str(), &db) != SQLITE_OK) return false;
 
-bool LoadMap() {
-    std::string path = GetMapFilePath();
-    std::ifstream inFile(path, std::ios::binary);
-    if (inFile.is_open()) {
-        inFile.read(reinterpret_cast<char*>(grid), sizeof(grid));
-        inFile.close();
-        SDL_Log("Map loaded successfully from %s", path.c_str());
-        return true;
+    const char* query = "SELECT x, y, altitude, type, r, g, b FROM map_cells;";
+    sqlite3_stmt* stmt;
+    
+    if (sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
     }
-    return false;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int x = sqlite3_column_int(stmt, 0);
+        int y = sqlite3_column_int(stmt, 1);
+        
+        if (x < GRID_SIZE && y < GRID_SIZE) {
+            grid[y][x].altitude = (float)sqlite3_column_double(stmt, 2);
+            grid[y][x].type = (CellType)sqlite3_column_int(stmt, 3);
+            grid[y][x].r = (Uint8)sqlite3_column_int(stmt, 4);
+            grid[y][x].g = (Uint8)sqlite3_column_int(stmt, 5);
+            grid[y][x].b = (Uint8)sqlite3_column_int(stmt, 6);
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return true;
 }
 
 void GenerateMap(unsigned seed) {

@@ -4,10 +4,9 @@
 #define MAP_GENERATION_H
 
 #include <string>
-#include "Constants.h"
 
 void GenerateMap(unsigned seed);
-void SaveMap();
-bool LoadMap();
+void SaveMapToDB();
+bool LoadMapFromDB();
 
 #endif

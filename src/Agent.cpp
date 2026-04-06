@@ -16,8 +16,8 @@ void Agent::BuildNewHouse(int& targetX, int& targetY) {
         isBuildingHouse = false;
         housePos = plotPos;
 
-        extern const char* SAVE_DATA_FILENAME;
-        extern std::string GetDBPath(const std::string & dbName);
+
+
         sqlite3* db;
         if (sqlite3_open(GetDBPath(SAVE_DATA_FILENAME).c_str(), &db) == SQLITE_OK) {
             sqlite3_stmt* stmt;
@@ -158,7 +158,7 @@ void Agent::WanderInSettlement(int& targetX, int& targetY) {
 
 void Agent::Work(int& targetX, int& targetY) {
     try {
-        extern std::string GetDBPath(const std::string& dbName);
+
         LootTable treeLoot = LoadLootTableFromDB(GetDBPath("WorldData.db"), 1); // 1 = Tree
         
         std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());

@@ -7,7 +7,6 @@
 #include <random>
 #include <fstream>
 #include <string>
-#include <filesystem>
 #include "sqlite3.h"
 #include "Constants.h"
 #include "MapGeneration.h"
@@ -26,20 +25,6 @@ Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SI
 
 bool settlementFound = false;
 Point settlementPos = { -1, -1 };
-const char* SETTLEMENT_FILENAME = "Settlement.dat";
-const char* MAP_FILENAME = "GameMap.map";
-const char* WORLD_DATA_FILENAME = "WorldData.db";
-const char* SAVE_DATA_FILENAME = "SaveData.db";
-
-std::string GetDBPath(const std::string& dbName) {
-    // If "data" folder exists linearly here, we are running from Terminal root.
-    // If not, we fall back to relative parent pathing assuming we are in /bin/.
-    if (std::filesystem::exists("data")) {
-        return "data\\" + dbName;
-    } else {
-        return "..\\data\\" + dbName;
-    }
-}
 
 unsigned currentSeed = 0;
 char seedString[64] = "";
@@ -155,10 +140,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     currentSeed = seed;
     SDL_snprintf(seedString, sizeof(seedString), "Seed: %u", currentSeed);
 
-    if (!LoadMap()) {
+    // Load map from DB
+    if(!LoadMapFromDB()){
         SDL_Log("No save found. Generating new map...");
         GenerateMap(seed);
-        SaveMap();
+        SaveMapToDB();        
     }
 
     LoadSettlement();
@@ -372,6 +358,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
 // Quit
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+    SaveMapToDB();
     SaveSettlement();
     EntityManager::SaveNPCs();
     if (appstate) {
