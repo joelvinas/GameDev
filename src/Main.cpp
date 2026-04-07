@@ -70,6 +70,7 @@ void check_sqlite_res(int res, char* errMsg) {
     }
 }
 
+// Save settlement to database
 void SaveSettlement() {
     sqlite3* db;
     char* errMsg = 0;

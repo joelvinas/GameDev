@@ -42,7 +42,6 @@ inline std::string GetDBPath(const std::string& dbName) {
     }
 }
 
-
 // Core Types
 struct Point {
     int x, y;
