@@ -13,5 +13,5 @@ exit /b 1
 :M1
 call %VCVARS% x64
 cd /d "%~dp0\.."
-cl src\Main.cpp src\MapGeneration.cpp src\Navigation.cpp src\Agent.cpp src\EntityManager.cpp src\TimeOfDay.cpp src\LootSystem.cpp src\Elements.cpp include\sqlite3.c /Iinclude /I "C:\SDK\SDL\include" /EHsc /std:c++17 /Febin\PathfindingGame.exe /Foobj\ /link /LIBPATH:"C:\SDK\SDL\lib\x64" SDL3.lib user32.lib gdi32.lib shell32.lib /SUBSYSTEM:CONSOLE
+cl src\Main.cpp src\MapGeneration.cpp src\Navigation.cpp src\Agent.cpp src\EntityManager.cpp src\TimeOfDay.cpp src\LootSystem.cpp src\Elements.cpp src\WorldObject.cpp include\sqlite3.c /Iinclude /I "C:\SDK\SDL\include" /EHsc /std:c++17 /Febin\PathfindingGame.exe /Foobj\ /link /LIBPATH:"C:\SDK\SDL\lib\x64" SDL3.lib user32.lib gdi32.lib shell32.lib /SUBSYSTEM:CONSOLE
 bin\PathfindingGame.exe

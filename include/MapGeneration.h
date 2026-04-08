@@ -6,6 +6,7 @@
 #include <string>
 
 void GenerateMap(unsigned seed);
+void GenerateTreesForMap(unsigned seed);
 void SaveMapToDB();
 bool LoadMapFromDB();
 

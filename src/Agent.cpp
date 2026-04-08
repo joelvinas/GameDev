@@ -16,31 +16,19 @@ void Agent::BuildNewHouse(int& targetX, int& targetY) {
         isBuildingHouse = false;
         housePos = plotPos;
 
+        static int houseIdCounter = 20000;
+        WorldObject houseObj;
+        houseObj.id = houseIdCounter++;
+        houseObj.type = HOUSE;
+        houseObj.gridPos = housePos;
+        houseObj.health = 500.0f;
+        houseObj.maxHealth = 500.0f;
+        houseObj.resourceYield = 0;
+        houseObj.ownerId = id;
+        
+        worldObjects.push_back(houseObj);
+        ownedStructureIds.insert(houseObj.id);
 
-
-        sqlite3* db;
-        if (sqlite3_open(GetDBPath(SAVE_DATA_FILENAME).c_str(), &db) == SQLITE_OK) {
-            sqlite3_stmt* stmt;
-            const char* insertSql = "INSERT INTO Structures (name, structureType, x, y) VALUES (?, ?, ?, ?);";
-            if (sqlite3_prepare_v2(db, insertSql, -1, &stmt, 0) == SQLITE_OK) {
-                std::string houseName = name + "'s House";
-                sqlite3_bind_text(stmt, 1, houseName.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, 2, 1);
-                sqlite3_bind_int(stmt, 3, housePos.x);
-                sqlite3_bind_int(stmt, 4, housePos.y);
-                sqlite3_step(stmt);
-                sqlite3_finalize(stmt);
-
-                long long newId = sqlite3_last_insert_rowid(db);
-                ownedStructureIds.insert(static_cast<int>(newId));
-            }
-            sqlite3_close(db);
-        }
-
-        grid[housePos.y][housePos.x].type = OBSTACLE;
-        grid[housePos.y][housePos.x].r = 139;
-        grid[housePos.y][housePos.x].g = 69;
-        grid[housePos.y][housePos.x].b = 19;
         SaveSettlement();
     }
     else {
@@ -95,37 +83,54 @@ void Agent::FindHousePlot(Point& plotPos, int& id) {
     }
 }
 
-bool Agent::FindTarget(int& targetX, int& targetY, int& id, CellType targetType) {
+bool Agent::FindTarget(int& targetX, int& targetY, int& id, ObjectType targetType) {
     bool foundTarget = false;
-    for (int r = 1; r < 30; ++r) {
-        for (int dy = -r; dy <= r; dy++) {
-            for (int dx = -r; dx <= r; dx++) {
-                if (std::abs(dx) == r || std::abs(dy) == r) {
-                    int tx = gridPos.x + dx;
-                    int ty = gridPos.y + dy;
-                    if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE && grid[ty][tx].type == targetType) {
-                        for (int ay = -1; ay <= 1; ay++) {
-                            for (int ax = -1; ax <= 1; ax++) {
-                                if (ax == 0 && ay == 0) continue;
-                                if (isPassable(tx + ax, ty + ay, id)) {
-                                    workTarget = {tx + ax, ty + ay};
-                                    isGoingToWork = true;
-                                    targetX = workTarget.x;
-                                    targetY = workTarget.y;
-                                    foundTarget = true;
-                                    break;
-                                }
-                            }
-                            if (foundTarget) break;
-                        }
+    Point bestPos = {-1, -1};
+
+    std::vector<std::pair<float, WorldObject*>> candidates;
+    for (auto& obj : worldObjects) {
+        if (obj.type == targetType) {
+            float dist = getDistance(gridPos, obj.gridPos);
+            candidates.push_back({dist, &obj});
+        }
+    }
+    
+    std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { 
+        return a.first < b.first; 
+    });
+
+    for (auto& candidate : candidates) {
+        WorldObject* obj = candidate.second;
+        for (int ay = -1; ay <= 1; ay++) {
+            for (int ax = -1; ax <= 1; ax++) {
+                if (ax == 0 && ay == 0) continue;
+                Point checkPos = {obj->gridPos.x + ax, obj->gridPos.y + ay};
+                if (isPassable(checkPos.x, checkPos.y, id)) {
+                    if (checkPos.x == gridPos.x && checkPos.y == gridPos.y) {
+                        bestPos = checkPos;
+                        foundTarget = true;
+                        break;
+                    }
+                    std::vector<Point> p = findPath(gridPos, checkPos, id);
+                    if (p.size() > 1) {
+                        bestPos = checkPos;
+                        foundTarget = true;
+                        break;
                     }
                 }
-                if (foundTarget) break;
             }
             if (foundTarget) break;
         }
         if (foundTarget) break;
     }
+
+    if (foundTarget) {
+        workTarget = bestPos;
+        isGoingToWork = true;
+        targetX = workTarget.x;
+        targetY = workTarget.y;
+    }
+
     return foundTarget;
 }
 
@@ -157,24 +162,47 @@ void Agent::WanderInSettlement(int& targetX, int& targetY) {
 }
 
 void Agent::Work(int& targetX, int& targetY) {
-    try {
-
-        LootTable treeLoot = LoadLootTableFromDB(GetDBPath("WorldData.db"), 1); // 1 = Tree
-        
-        std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
-        auto drops = RollLootTable(treeLoot, rng);
-        
-        for (const auto& drop : drops) {
-            int itemId = drop.first.id;
-            int qty = drop.second;
-            if (inventory.find(itemId) == inventory.end()) {
-                inventory[itemId] = InventoryItem(drop.first, 0);
+    WorldObject* tree = nullptr;
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            WorldObject* obj = GetObjectAt(gridPos.x + dx, gridPos.y + dy);
+            if (obj && obj->type == TREE) {
+                tree = obj;
+                break;
             }
-            inventory[itemId].quantity += qty;
         }
-    } catch (const std::exception& e) {
-        SDL_Log("Loot error: %s", e.what());
+        if (tree) break;
     }
+
+    if (tree) {
+        tree->health -= 1.0f; // from user config
+        EntityManager::UpdateWorldObjectHealth(tree->id, tree->health);
+
+        try {
+            LootTable treeLoot = LoadLootTableFromDB(GetDBPath("WorldData.db"), 1); // 1 = Tree
+            std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
+            auto drops = RollLootTable(treeLoot, rng);
+
+            for (const auto& drop : drops) {
+                int itemId = drop.first.id;
+                int qty = drop.second;
+                if (inventory.find(itemId) == inventory.end()) {
+                    inventory[itemId] = InventoryItem(drop.first, 0);
+                }
+                inventory[itemId].quantity += qty;
+            }
+        } catch (const std::exception& e) {
+            SDL_Log("Loot error: %s", e.what());
+        }
+
+        if (tree->health <= 0) {
+            auto it = std::remove_if(worldObjects.begin(), worldObjects.end(), 
+                [tree](const WorldObject& o) { return o.id == tree->id; });
+            worldObjects.erase(it, worldObjects.end());
+        }
+    }
+
     isWorking = false;
     isReturningHome = true;
     targetX = housePos.x;
@@ -257,6 +285,9 @@ void Agent::Update(float deltaTime) {
                                     if (!foundTarget) {
                                         targetX = housePos.x;
                                         targetY = housePos.y;
+                                        SDL_Log("Agent %d (%s) searched for a TREE but no valid path was found (or no trees exist).", id, currentJob.c_str());
+                                    } else {
+                                        SDL_Log("Agent %d leaving house and pathing towards TREE at %d,%d.", id, targetX, targetY);
                                     }
                                 } else {
                                     isReturningHome = true;

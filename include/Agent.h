@@ -49,7 +49,7 @@ struct Agent {
     void BuildNewHouse(int& targetX, int& targetY);
     void BuildSettlement(int& targetX, int& targetY);
     void FindHousePlot(Point& plotPos, int& id);
-    bool FindTarget(int& targetX, int& targetY, int& id, CellType targetType);
+    bool FindTarget(int& targetX, int& targetY, int& id, ObjectType targetType);
     void FindPathway(int& targetX, int& targetY, Point& plotPos, int& id);
     void Work(int& targetX, int& targetY);
     void WanderInSettlement(int& targetX, int& targetY);

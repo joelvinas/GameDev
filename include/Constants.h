@@ -49,12 +49,19 @@ struct Point {
     bool operator!=(const Point& other) const { return !(*this == other); }
 };
 
-struct Building {
-    int settlementId;
-    Point address;
+enum ObjectType { TREE, STUMP, HOUSE, WALL, STORAGE };
+
+struct WorldObject {
+    int id;
+    ObjectType type;
+    Point gridPos;
+    float health;
+    float maxHealth;
+    int resourceYield; // For Trees/Mines
+    int ownerId;       // To track which Agent owns the house
 };
 
-enum CellType { GRASS = 0, OBSTACLE, SWAMP, WATER, MOUNTAIN, TREE };
+enum CellType { GRASS = 0, OBSTACLE, SWAMP, WATER, MOUNTAIN };
 
 struct Cell {
     CellType type;
@@ -62,8 +69,12 @@ struct Cell {
     unsigned char r, g, b;
 };
 
-// Global Grid
+// Global Collections
 extern Cell grid[GRID_SIZE][GRID_SIZE];
+extern std::vector<WorldObject> worldObjects;
+WorldObject* GetObjectAt(int x, int y);
+
+
 
 // Rendering Helpers
 void DrawFilledCircle(SDL_Renderer* renderer, float x, float y, float r);

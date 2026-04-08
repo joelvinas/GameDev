@@ -143,6 +143,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
     // Load map from DB
     if(!LoadMapFromDB()){
+    //if(true){
         SDL_Log("No save found. Generating new map...");
         GenerateMap(seed);
         SaveMapToDB();        
@@ -157,6 +158,22 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         grid[10][10].r = 34; grid[10][10].g = 139; grid[10][10].b = 34;
     }
     targetPos = playerPos;
+
+    EntityManager::LoadWorldObjects();
+    
+    // Migration Fallback: If map loaded but WorldObjects has no trees, generate a fresh forest!
+    bool hasTrees = false;
+    for (const auto& obj : worldObjects) {
+        if (obj.type == TREE) {
+            hasTrees = true;
+            break;
+        }
+    }
+    if (!hasTrees) {
+        SDL_Log("No WorldObjects found in DB! Generating new trees for legacy map...");
+        GenerateTreesForMap(currentSeed);
+        EntityManager::SaveWorldObjects();
+    }
 
     EntityManager::Initialize();
 
@@ -256,11 +273,18 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             SDL_FRect cellRect = { (float)(x * CELL_SIZE), (float)(y * CELL_SIZE), (float)CELL_SIZE, (float)CELL_SIZE };
             SDL_SetRenderDrawColor(as->renderer, c.r, c.g, c.b, 255);
             SDL_RenderFillRect(as->renderer, &cellRect);
+        }
+    }
 
-            if (c.type == TREE) {
-                SDL_SetRenderDrawColor(as->renderer, 20, 100, 20, 255);
-                DrawFilledCircle(as->renderer, x * CELL_SIZE + CELL_SIZE / 2.0f, y * CELL_SIZE + CELL_SIZE / 2.0f, CELL_SIZE / 3.0f);
-            }
+    // Draw World Objects
+    for (const auto& obj : worldObjects) {
+        if (obj.type == TREE) {
+            SDL_SetRenderDrawColor(as->renderer, 20, 100, 20, 255);
+            DrawFilledCircle(as->renderer, obj.gridPos.x * CELL_SIZE + CELL_SIZE / 2.0f, obj.gridPos.y * CELL_SIZE + CELL_SIZE / 2.0f, CELL_SIZE / 3.0f);
+        } else if (obj.type == HOUSE) {
+            SDL_SetRenderDrawColor(as->renderer, 139, 69, 19, 255);
+            SDL_FRect houseRect = { (float)(obj.gridPos.x * CELL_SIZE), (float)(obj.gridPos.y * CELL_SIZE), (float)CELL_SIZE, (float)CELL_SIZE };
+            SDL_RenderFillRect(as->renderer, &houseRect);
         }
     }
 
@@ -361,6 +385,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     SaveMapToDB();
     SaveSettlement();
+    EntityManager::SaveWorldObjects();
     EntityManager::SaveNPCs();
     if (appstate) {
         AppState* as = (AppState*)appstate;

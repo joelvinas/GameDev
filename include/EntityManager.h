@@ -19,6 +19,9 @@ public:
     static void AlertFoundSettlement(Point settlementPos);
     static void SaveNPCs();
     static bool LoadNPCs();
+    static void SaveWorldObjects();
+    static bool LoadWorldObjects();
+    static void UpdateWorldObjectHealth(int objectId, float newHealth);
 };
 
 #endif

@@ -194,7 +194,17 @@ void GenerateMap(unsigned seed) {
 
                 if (alt < TREE_LINE && forestNoise > (1.0f - TREE_DENSITY)) {
                     if (std::uniform_real_distribution<float>(0, 1)(rng) < 0.8f) {
-                        cell.type = TREE;
+                        static int treeIdCounter = 10000;
+                        WorldObject treeObj;
+                        treeObj.id = treeIdCounter++;
+                        treeObj.type = TREE;
+                        treeObj.gridPos = {x, y};
+                        treeObj.health = 100.0f;
+                        treeObj.maxHealth = 100.0f;
+                        treeObj.resourceYield = 1;
+                        treeObj.ownerId = -1;
+                        worldObjects.push_back(treeObj);
+                        
                         cell.r = 10; cell.g = 60; cell.b = 10; 
                     }
                 } 
@@ -202,3 +212,34 @@ void GenerateMap(unsigned seed) {
         }
     }
 }
+
+void GenerateTreesForMap(unsigned seed) {
+    std::mt19937 rng(seed);
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            Cell& cell = grid[y][x];
+            if (cell.type == GRASS) {
+                float forestNoise = fractalNoise((float)x / GRID_SIZE * TREE_NOISE_SCALE, 
+                                                (float)y / GRID_SIZE * TREE_NOISE_SCALE, 
+                                                seed + 2, 2); 
+                if (cell.altitude < TREE_LINE && forestNoise > (1.0f - TREE_DENSITY)) {
+                    if (std::uniform_real_distribution<float>(0, 1)(rng) < 0.8f) {
+                        static int treeIdCounter = 10000;
+                        WorldObject treeObj;
+                        treeObj.id = treeIdCounter++;
+                        treeObj.type = TREE;
+                        treeObj.gridPos = {x, y};
+                        treeObj.health = 100.0f;
+                        treeObj.maxHealth = 100.0f;
+                        treeObj.resourceYield = 1;
+                        treeObj.ownerId = -1;
+                        worldObjects.push_back(treeObj);
+
+                        cell.r = 10; cell.g = 60; cell.b = 10;
+                    }
+                }
+            }
+        }
+    }
+}
+

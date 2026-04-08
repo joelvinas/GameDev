@@ -104,18 +104,33 @@ float getDistance(Point p1, Point p2) {
 bool isPassable(int x, int y, int agentId) {
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false;
     CellType t = grid[y][x].type;
-    if (t == OBSTACLE) {
-        if (agentId != -1) {
-            for (const auto& a : EntityManager::npcs) {
-                if (a.id == agentId && a.hasHouse && a.housePos.x == x && a.housePos.y == y) {
-                    return true;
+    
+    // Check WorldObjects first
+    WorldObject* obj = GetObjectAt(x, y);
+    if (obj != nullptr) {
+        if (obj->type == HOUSE || obj->type == STORAGE || obj->type == WALL) {
+            if (agentId != -1) {
+                for (const auto& agent : EntityManager::npcs) {
+                    if (agent.id == agentId) {
+                        if (agent.ownedStructureIds.count(obj->id) > 0) {
+                            return true;
+                        }
+                    }
                 }
             }
+            return false; 
         }
-        return false;
+        
+        if (obj->type == TREE || obj->type == STUMP) {
+            // Note: future races will be able to walk through Trees
+            return false; 
+        }
     }
-    if (t == WATER || t == TREE) return false;
+    
+    if (t == OBSTACLE) return false;
+    if (t == WATER) return false;
     if (t == MOUNTAIN && grid[y][x].altitude > 0.85f) return false;
+    
     return true;
 }
 

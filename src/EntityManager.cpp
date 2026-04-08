@@ -85,8 +85,7 @@ void EntityManager::SaveNPCs() {
     const char* createTablesSQL =
         "CREATE TABLE IF NOT EXISTS NPCs (id INT PRIMARY KEY, name TEXT, gridX INT, gridY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT);"
         "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT);"
-        "CREATE TABLE IF NOT EXISTS NPCStructures (npc_id INT, structure_id INT, PRIMARY KEY(npc_id, structure_id));"
-        "CREATE TABLE IF NOT EXISTS Structures (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, structureType INTEGER, x INT, y INT);";
+        "CREATE TABLE IF NOT EXISTS WorldObject_Owners (npc_id INT, object_id INT, PRIMARY KEY(npc_id, object_id));";
 
     rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
     check_sqlite_res(rc, errMsg);
@@ -95,13 +94,13 @@ void EntityManager::SaveNPCs() {
     const char* insertNPCSQL = "INSERT OR REPLACE INTO NPCs (id, name, gridX, gridY, isBuildingHouse, plotPosX, plotPosY, currentJob, isGoingToWork, isWorking, isReturningHome, workTargetX, workTargetY) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_prepare_v2(db, insertNPCSQL, -1, &stmtNPC, 0);
 
-    sqlite3_stmt* stmtStructure;
-    const char* insertStructureSQL = "INSERT OR REPLACE INTO NPCStructures (npc_id, structure_id) VALUES (?, ?);";
-    sqlite3_prepare_v2(db, insertStructureSQL, -1, &stmtStructure, 0);
-
     sqlite3_stmt* stmtInv;
     const char* insertInvSQL = "INSERT OR REPLACE INTO NPCInventory (npc_id, item_id, itemCount) VALUES (?, ?, ?);";
     sqlite3_prepare_v2(db, insertInvSQL, -1, &stmtInv, 0);
+
+    sqlite3_stmt* stmtOwners;
+    const char* insertOwnersSQL = "INSERT OR REPLACE INTO WorldObject_Owners (npc_id, object_id) VALUES (?, ?);";
+    sqlite3_prepare_v2(db, insertOwnersSQL, -1, &stmtOwners, 0);
 
     // Insert NPC data
     for (const auto& a : npcs) {
@@ -123,10 +122,10 @@ void EntityManager::SaveNPCs() {
         sqlite3_reset(stmtNPC);
 
         for (int structId : a.ownedStructureIds) {
-            sqlite3_bind_int(stmtStructure, 1, a.id);
-            sqlite3_bind_int(stmtStructure, 2, structId);
-            sqlite3_step(stmtStructure);
-            sqlite3_reset(stmtStructure);
+            sqlite3_bind_int(stmtOwners, 1, a.id);
+            sqlite3_bind_int(stmtOwners, 2, structId);
+            sqlite3_step(stmtOwners);
+            sqlite3_reset(stmtOwners);
         }
 
         for (const auto& item : a.inventory) {
@@ -140,8 +139,8 @@ void EntityManager::SaveNPCs() {
     }
 
     sqlite3_finalize(stmtNPC);
-    sqlite3_finalize(stmtStructure);
     sqlite3_finalize(stmtInv);
+    sqlite3_finalize(stmtOwners);
     sqlite3_close(db);
     SDL_Log("NPCs saved to SQLite database.");
 }
@@ -170,7 +169,12 @@ bool EntityManager::LoadNPCs() {
             a.plotPos.y = sqlite3_column_int(stmt, 6);
             
             const char* jobText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
-            a.currentJob = jobText ? jobText : "Lumberjack";
+            if (jobText) {
+                a.currentJob = jobText;
+            }
+            if (a.currentJob.empty()) {
+                a.currentJob = "Lumberjack";
+            }
             
             a.isGoingToWork = sqlite3_column_int(stmt, 8) != 0;
             a.isWorking = sqlite3_column_int(stmt, 9) != 0;
@@ -184,33 +188,7 @@ bool EntityManager::LoadNPCs() {
             a.hasHouse = false;
             a.housePos = {-1, -1};
 
-            sqlite3_stmt* stmtStructures;
-            const char* selectStructuresSQL = 
-                "SELECT ns.structure_id, s.x, s.y, s.structureType "
-                "FROM NPCStructures ns "
-                "JOIN Structures s ON ns.structure_id = s.id "
-                "WHERE ns.npc_id = ?;";
-
-            if (sqlite3_prepare_v2(db, selectStructuresSQL, -1, &stmtStructures, nullptr) == SQLITE_OK) {
-                sqlite3_bind_int(stmtStructures, 1, a.id);
-                while (sqlite3_step(stmtStructures) == SQLITE_ROW) {
-                    int structId = sqlite3_column_int(stmtStructures, 0);
-                    a.ownedStructureIds.insert(structId);
-                    
-                    int sx = sqlite3_column_int(stmtStructures, 1);
-                    int sy = sqlite3_column_int(stmtStructures, 2);
-                    int structureType = sqlite3_column_int(stmtStructures, 3);
-                    if (structureType == 1) { // 1 = House
-                        a.hasHouse = true;
-                        a.housePos = { sx, sy };
-                        grid[sy][sx].type = OBSTACLE;
-                        grid[sy][sx].r = 139;
-                        grid[sy][sx].g = 69;
-                        grid[sy][sx].b = 19;
-                    }
-                }
-                sqlite3_finalize(stmtStructures);
-            }
+            // We will load ownership mapping below instead of here.
 
             loadedNPCs.push_back(a);
         }
@@ -255,6 +233,29 @@ bool EntityManager::LoadNPCs() {
                 sqlite3_finalize(stmt);
             }
             
+            // Load WorldObject Ownerships
+            sqlite3_stmt* stmtOwners;
+            std::string selectOwnersSQL = "SELECT npc_id, object_id FROM WorldObject_Owners;";
+            if (sqlite3_prepare_v2(db, selectOwnersSQL.c_str(), -1, &stmtOwners, 0) == SQLITE_OK) {
+                while (sqlite3_step(stmtOwners) == SQLITE_ROW) {
+                    int npcId = sqlite3_column_int(stmtOwners, 0);
+                    int objId = sqlite3_column_int(stmtOwners, 1);
+                    for (auto& a : loadedNPCs) {
+                        if (a.id == npcId) {
+                            a.ownedStructureIds.insert(objId);
+                            for (const auto& obj : worldObjects) {
+                                if (obj.id == objId && obj.type == HOUSE) {
+                                    a.hasHouse = true;
+                                    a.housePos = obj.gridPos;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                sqlite3_finalize(stmtOwners);
+            }
+
             npcs = loadedNPCs;
             sqlite3_close(db);
             SDL_Log("NPCs loaded from SQLite database.");
@@ -262,6 +263,111 @@ bool EntityManager::LoadNPCs() {
         }
     }
 
+    sqlite3_close(db);
+    return false;
+}
+
+void EntityManager::SaveWorldObjects() {
+    sqlite3* db;
+    char* errMsg = 0;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    if (rc) {
+        SDL_Log("Can't open database for WorldObjects: %s", sqlite3_errmsg(db));
+        return;
+    }
+
+    const char* createTablesSQL =
+        "CREATE TABLE IF NOT EXISTS WorldObjects (id INTEGER PRIMARY KEY, type INT, gridX INT, gridY INT, health REAL, maxHealth REAL, resourceYield INT, ownerId INT);";
+    
+    rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);
+    check_sqlite_res(rc, errMsg);
+
+    sqlite3_stmt* stmtObj;
+    const char* insertObjSQL = "INSERT OR REPLACE INTO WorldObjects (id, type, gridX, gridY, health, maxHealth, resourceYield, ownerId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_prepare_v2(db, insertObjSQL, -1, &stmtObj, 0);
+
+    for (const auto& w : worldObjects) {
+        sqlite3_bind_int(stmtObj, 1, w.id);
+        sqlite3_bind_int(stmtObj, 2, static_cast<int>(w.type));
+        sqlite3_bind_int(stmtObj, 3, w.gridPos.x);
+        sqlite3_bind_int(stmtObj, 4, w.gridPos.y);
+        sqlite3_bind_double(stmtObj, 5, w.health);
+        sqlite3_bind_double(stmtObj, 6, w.maxHealth);
+        sqlite3_bind_int(stmtObj, 7, w.resourceYield);
+        sqlite3_bind_int(stmtObj, 8, w.ownerId);
+
+        sqlite3_step(stmtObj);
+        sqlite3_reset(stmtObj);
+    }
+
+    sqlite3_finalize(stmtObj);
+    sqlite3_close(db);
+    SDL_Log("WorldObjects saved to SQLite database.");
+}
+
+void EntityManager::UpdateWorldObjectHealth(int objectId, float newHealth) {
+    sqlite3* db;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) return;
+
+    if (newHealth <= 0.0f) {
+        sqlite3_stmt* stmt;
+        const char* deleteSql = "DELETE FROM WorldObjects WHERE id = ?;";
+        if (sqlite3_prepare_v2(db, deleteSql, -1, &stmt, 0) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, objectId);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else {
+        sqlite3_stmt* stmt;
+        const char* updateSql = "UPDATE WorldObjects SET health = ? WHERE id = ?;";
+        if (sqlite3_prepare_v2(db, updateSql, -1, &stmt, 0) == SQLITE_OK) {
+            sqlite3_bind_double(stmt, 1, newHealth);
+            sqlite3_bind_int(stmt, 2, objectId);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    sqlite3_close(db);
+}
+
+bool EntityManager::LoadWorldObjects() {
+    sqlite3* db;
+    std::string dbPath = GetDBPath(SAVE_DATA_FILENAME);
+    if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) return false;
+
+    sqlite3_stmt* stmt;
+    std::string selectSQL = "SELECT id, type, gridX, gridY, health, maxHealth, resourceYield, ownerId FROM WorldObjects;";
+
+    if (sqlite3_prepare_v2(db, selectSQL.c_str(), -1, &stmt, 0) == SQLITE_OK) {
+        worldObjects.clear();
+        bool hasRecords = false;
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            hasRecords = true;
+            WorldObject w;
+            w.id = sqlite3_column_int(stmt, 0);
+            w.type = static_cast<ObjectType>(sqlite3_column_int(stmt, 1));
+            w.gridPos.x = sqlite3_column_int(stmt, 2);
+            w.gridPos.y = sqlite3_column_int(stmt, 3);
+            w.health = (float)sqlite3_column_double(stmt, 4);
+            w.maxHealth = (float)sqlite3_column_double(stmt, 5);
+            w.resourceYield = sqlite3_column_int(stmt, 6);
+            w.ownerId = sqlite3_column_int(stmt, 7);
+
+            worldObjects.push_back(w);
+        }
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        if (hasRecords) {
+            SDL_Log("WorldObjects loaded from SQLite database.");
+            return true;
+        } else {
+            return false;
+        }
+    }
     sqlite3_close(db);
     return false;
 }
