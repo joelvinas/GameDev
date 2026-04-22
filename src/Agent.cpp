@@ -67,6 +67,110 @@ void Agent::BuildSettlement(int& targetX, int& targetY){
     }
 }
 
+void Agent::FindWarehousePlot(Point& plotPos, int& id) {
+    for (int attempt = 0; attempt < 50; attempt++) {
+        int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+        int dy = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
+        if (dx*dx + dy*dy <= SETTLEMENT_RADIUS*SETTLEMENT_RADIUS) {
+            int hx = settlementPos.x + dx;
+            int hy = settlementPos.y + dy;
+            if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE && grid[hy][hx].type == GRASS) {
+                if (GetObjectAt(hx, hy) == nullptr) {
+                    isBuildingWarehouse = true;
+                    plotPos = {hx, hy};
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void Agent::BuildWarehouse(int& targetX, int& targetY) {
+    int dX = std::abs(gridPos.x - plotPos.x);
+    int dY = std::abs(gridPos.y - plotPos.y);
+    if (dX <= 1 && dY <= 1 && (dX != 0 || dY != 0)) {
+        isBuildingWarehouse = false;
+        warehousePlotPos = plotPos;
+
+        static int warehouseIdCounter = 30000;
+        WorldObject warehouseObj;
+        warehouseObj.id = warehouseIdCounter++;
+        warehouseObj.type = WAREHOUSE_PLOT;
+        warehouseObj.gridPos = warehousePlotPos;
+        warehouseObj.health = 1000.0f;
+        warehouseObj.maxHealth = 1000.0f;
+        warehouseObj.resourceYield = 0;
+        warehouseObj.ownerId = SETTLEMENT_ID;
+        
+        worldObjects.push_back(warehouseObj);
+        warehousePlotFound = true;
+
+        SaveSettlement();
+    }
+    else {
+        // Find a path to the plot
+        FindPathway(targetX, targetY, plotPos, id);
+    }
+}
+
+void Agent::DepositInventory() {
+    for (auto it = inventory.begin(); it != inventory.end(); ) {
+        int itemId = it->first;
+        if (settlementInventories[SETTLEMENT_ID].find(itemId) == settlementInventories[SETTLEMENT_ID].end()) {
+            settlementInventories[SETTLEMENT_ID][itemId] = it->second;
+        } else {
+            settlementInventories[SETTLEMENT_ID][itemId].quantity += it->second.quantity;
+        }
+        it = inventory.erase(it);
+    }
+}
+
+void Agent::DeliverToWarehousePlot(int& targetX, int& targetY) {
+    int dX = std::abs(gridPos.x - warehousePlotPos.x);
+    int dY = std::abs(gridPos.y - warehousePlotPos.y);
+    if (dX <= 1 && dY <= 1) {
+        for (auto it = inventory.begin(); it != inventory.end(); ) {
+            if (it->second.itemType.name == "Wood" && warehouseWoodCount < 10) {
+                int toGive = std::min(it->second.quantity, 10 - warehouseWoodCount);
+                warehouseWoodCount += toGive;
+                it->second.quantity -= toGive;
+            } else if (it->second.itemType.name == "Stick" && warehouseStickCount < 20) {
+                int toGive = std::min(it->second.quantity, 20 - warehouseStickCount);
+                warehouseStickCount += toGive;
+                it->second.quantity -= toGive;
+            }
+            if (it->second.quantity <= 0) {
+                it = inventory.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        isDeliveringToPlot = false;
+        
+        if (warehouseWoodCount >= 10 && warehouseStickCount >= 20) {
+            for (auto& obj : worldObjects) {
+                if (obj.type == WAREHOUSE_PLOT && obj.gridPos == warehousePlotPos) {
+                    obj.type = STORAGE;
+                    break;
+                }
+            }
+            warehousePlotFound = false;
+            warehouseFound = true;
+            warehousePos = warehousePlotPos;
+        }
+
+        isReturningHome = true;
+        targetX = housePos.x;
+        targetY = housePos.y;
+    } else {
+        FindPathway(targetX, targetY, warehousePlotPos, id);
+        if (!isBuildingHouse && !isBuildingWarehouse && !isMoving && targetX == gridPos.x && targetY == gridPos.y) {
+            // Fallback if pathway not found
+        }
+    }
+}
+
 void Agent::FindHousePlot(Point& plotPos, int& id) {
     for (int attempt = 0; attempt < 50; attempt++) {
         int dx = (std::rand() % (SETTLEMENT_RADIUS * 2 + 1)) - SETTLEMENT_RADIUS;
@@ -75,9 +179,11 @@ void Agent::FindHousePlot(Point& plotPos, int& id) {
             int hx = settlementPos.x + dx;
             int hy = settlementPos.y + dy;
             if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE && grid[hy][hx].type == GRASS) {
-                isBuildingHouse = true;
-                plotPos = {hx, hy};
-                break;
+                if (GetObjectAt(hx, hy) == nullptr) {
+                    isBuildingHouse = true;
+                    plotPos = {hx, hy};
+                    break;
+                }
             }
         }
     }
@@ -204,9 +310,20 @@ void Agent::Work(int& targetX, int& targetY) {
     }
 
     isWorking = false;
-    isReturningHome = true;
-    targetX = housePos.x;
-    targetY = housePos.y;
+    
+    if (warehouseFound) {
+        isDepositing = true;
+        targetX = warehousePos.x;
+        targetY = warehousePos.y;
+    } else if (warehousePlotFound) {
+        isDeliveringToPlot = true;
+        targetX = warehousePlotPos.x;
+        targetY = warehousePlotPos.y;
+    } else {
+        isReturningHome = true;
+        targetX = housePos.x;
+        targetY = housePos.y;
+    }
 }
 
 void Agent::Update(float deltaTime) {
@@ -271,13 +388,30 @@ void Agent::Update(float deltaTime) {
                         BuildNewHouse(targetX, targetY);
                     }
                     
-                    if (!isBuildingHouse) {
+                    if (hasHouse && !isBuildingHouse && !warehouseFound && !warehousePlotFound && !isBuildingWarehouse) {
+                        bool anyoneBuildingWarehouse = false;
+                        for (const auto& a : EntityManager::npcs) {
+                            if (a.isBuildingWarehouse) {
+                                anyoneBuildingWarehouse = true;
+                                break;
+                            }
+                        }
+                        if (!anyoneBuildingWarehouse) {
+                            FindWarehousePlot(plotPos, id);
+                        }
+                    }
+
+                    if (isBuildingWarehouse && !isMoving) {
+                        BuildWarehouse(targetX, targetY);
+                    }
+                    
+                    if (!isBuildingHouse && !isBuildingWarehouse) {
                         if (hasHouse && currentJob == "Lumberjack") {
                             // Check if at home
                             bool atHome = std::abs(gridPos.x - housePos.x) <= 1 && std::abs(gridPos.y - housePos.y) <= 1;
                             
                             // Check if going to work
-                            if (!isGoingToWork && !isWorking && !isReturningHome) {
+                            if (!isGoingToWork && !isWorking && !isReturningHome && !isDepositing && !isDeliveringToPlot) {
                                 if (atHome) {
                                     // Find a target to chop
                                     bool foundTarget = FindTarget(targetX, targetY, id, TREE);
@@ -304,6 +438,14 @@ void Agent::Update(float deltaTime) {
                                 isReturningHome = false;
                                 targetX = housePos.x;
                                 targetY = housePos.y;
+                            } else if (isDepositing && !isMoving) {
+                                DepositInventory();
+                                isDepositing = false;
+                                isReturningHome = true;
+                                targetX = housePos.x;
+                                targetY = housePos.y;
+                            } else if (isDeliveringToPlot && !isMoving) {
+                                DeliverToWarehousePlot(targetX, targetY);
                             }
                         } else {
                             // Move to random position in settlement
@@ -324,7 +466,11 @@ void Agent::Update(float deltaTime) {
                         isMoving = true;
                         currentPathIndex = 0;
                         moveProgress = 0.0f;
+                    } else {
+                        SDL_Log("Agent %d failed to find path from %d,%d to %d,%d", id, gridPos.x, gridPos.y, targetX, targetY);
                     }
+                } else if (!isPassable(targetX, targetY, id)) {
+                    SDL_Log("Agent %d target %d,%d is UNPASSABLE", id, targetX, targetY);
                 }
                 waitTimer = 0.0f;
                 if (isWorking) {

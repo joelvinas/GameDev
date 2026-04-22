@@ -33,7 +33,8 @@ void EntityManager::Initialize() {
                 int ny = 30 + dy;
                 if (isPassable(nx, ny)) {
                     Agent a;
-                    //a.name = names[spawned];
+                    a.id = spawned + 1; // Assign unique ID
+                    a.name = names[spawned];
                     a.gridPos = { nx, ny };
                     a.realPos = { nx * CELL_SIZE + CELL_SIZE / 2, ny * CELL_SIZE + CELL_SIZE / 2 };
                     a.waitDuration = std::uniform_real_distribution<float>(2.0f, 5.0f)(rng);
@@ -83,8 +84,8 @@ void EntityManager::SaveNPCs() {
     }
 
     const char* createTablesSQL =
-        "CREATE TABLE IF NOT EXISTS NPCs (id INT PRIMARY KEY, name TEXT, gridX INT, gridY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT);"
-        "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT);"
+        "CREATE TABLE IF NOT EXISTS NPCs (id INTEGER, name TEXT, gridX INT, gridY INT, isBuildingHouse INT, plotPosX INT, plotPosY INT, currentJob TEXT, isGoingToWork INT, isWorking INT, isReturningHome INT, workTargetX INT, workTargetY INT, PRIMARY KEY (id AUTOINCREMENT));"
+        "CREATE TABLE IF NOT EXISTS NPCInventory (npc_id INT, item_id INTEGER, itemCount INT, PRIMARY KEY(npc_id, item_id));"
         "CREATE TABLE IF NOT EXISTS WorldObject_Owners (npc_id INT, object_id INT, PRIMARY KEY(npc_id, object_id));";
 
     rc = sqlite3_exec(db, createTablesSQL, 0, 0, &errMsg);

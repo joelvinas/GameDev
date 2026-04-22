@@ -26,6 +26,14 @@ Point realPlayerPos = { 10 * CELL_SIZE + CELL_SIZE / 2, 10 * CELL_SIZE + CELL_SI
 bool settlementFound = false;
 Point settlementPos = { -1, -1 };
 
+bool warehouseFound = false;
+Point warehousePos = { -1, -1 };
+bool warehousePlotFound = false;
+Point warehousePlotPos = { -1, -1 };
+int warehouseWoodCount = 0;
+int warehouseStickCount = 0;
+std::map<int, std::map<int, InventoryItem>> settlementInventories;
+
 unsigned currentSeed = 0;
 char seedString[64] = "";
 
@@ -166,7 +174,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     for (const auto& obj : worldObjects) {
         if (obj.type == TREE) {
             hasTrees = true;
-            break;
+        } else if (obj.type == STORAGE) {
+            warehouseFound = true;
+            warehousePos = obj.gridPos;
+        } else if (obj.type == WAREHOUSE_PLOT) {
+            warehousePlotFound = true;
+            warehousePlotPos = obj.gridPos;
         }
     }
     if (!hasTrees) {
@@ -285,6 +298,17 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             SDL_SetRenderDrawColor(as->renderer, 139, 69, 19, 255);
             SDL_FRect houseRect = { (float)(obj.gridPos.x * CELL_SIZE), (float)(obj.gridPos.y * CELL_SIZE), (float)CELL_SIZE, (float)CELL_SIZE };
             SDL_RenderFillRect(as->renderer, &houseRect);
+        } else if (obj.type == STORAGE) {
+            SDL_SetRenderDrawColor(as->renderer, 105, 105, 105, 255); // Dim Gray for Warehouse
+            SDL_FRect storageRect = { (float)(obj.gridPos.x * CELL_SIZE), (float)(obj.gridPos.y * CELL_SIZE), (float)CELL_SIZE, (float)CELL_SIZE };
+            SDL_RenderFillRect(as->renderer, &storageRect);
+            SDL_SetRenderDrawColor(as->renderer, 169, 169, 169, 255); // Dark Gray inner
+            SDL_FRect innerRect = { (float)(obj.gridPos.x * CELL_SIZE + 2), (float)(obj.gridPos.y * CELL_SIZE + 2), (float)CELL_SIZE - 4.0f, (float)CELL_SIZE - 4.0f };
+            SDL_RenderFillRect(as->renderer, &innerRect);
+        } else if (obj.type == WAREHOUSE_PLOT) {
+            SDL_SetRenderDrawColor(as->renderer, 255, 255, 0, 255); // Yellow for survey
+            SDL_FRect plotRect = { (float)(obj.gridPos.x * CELL_SIZE), (float)(obj.gridPos.y * CELL_SIZE), (float)CELL_SIZE, (float)CELL_SIZE };
+            SDL_RenderRect(as->renderer, &plotRect);
         }
     }
 
@@ -373,6 +397,36 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             }
         }
         panelY += 10;
+    }
+
+    if (warehouseFound) {
+        panelY += 20;
+        std::string h = "Settlement Warehouse:";
+        SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, panelY, h.c_str());
+        panelY += 20;
+        
+        auto& wInv = settlementInventories[SETTLEMENT_ID];
+        if (wInv.empty()) {
+            SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, "- Empty");
+            panelY += 20;
+        } else {
+            for (const auto& pair : wInv) {
+                const auto& invItem = pair.second;
+                std::string line = "- " + invItem.itemType.name + " (" + std::to_string(invItem.itemType.weight * invItem.quantity) + " kg): " + std::to_string(invItem.quantity);
+                SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, line.c_str());
+                panelY += 20;
+            }
+        }
+    } else if (warehousePlotFound) {
+        panelY += 20;
+        std::string h = "Warehouse Survey:";
+        SDL_RenderDebugText(as->renderer, MAP_SIZE + 20, panelY, h.c_str());
+        panelY += 20;
+        std::string woodStr = "- Wood: " + std::to_string(warehouseWoodCount) + " / 10";
+        SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, woodStr.c_str());
+        panelY += 20;
+        std::string stickStr = "- Stick: " + std::to_string(warehouseStickCount) + " / 20";
+        SDL_RenderDebugText(as->renderer, MAP_SIZE + 30, panelY, stickStr.c_str());
     }
 
     // Present

@@ -49,7 +49,7 @@ struct Point {
     bool operator!=(const Point& other) const { return !(*this == other); }
 };
 
-enum ObjectType { TREE, STUMP, HOUSE, WALL, STORAGE };
+enum ObjectType { TREE, STUMP, HOUSE, WALL, STORAGE, WAREHOUSE_PLOT };
 
 struct WorldObject {
     int id;
@@ -83,6 +83,16 @@ void DrawHexagon(SDL_Renderer* renderer, float x, float y, float r);
 // Settlement State
 extern bool settlementFound;
 extern Point settlementPos;
+
+// Warehouse State
+extern bool warehouseFound;
+extern Point warehousePos;
+extern bool warehousePlotFound;
+extern Point warehousePlotPos;
+extern int warehouseWoodCount;
+extern int warehouseStickCount;
+extern std::map<int, std::map<int, struct InventoryItem>> settlementInventories;
+
 void SaveSettlement();
 
 #endif

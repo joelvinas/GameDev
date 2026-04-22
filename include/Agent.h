@@ -12,13 +12,7 @@
 #include "Constants.h"
 #include "ItemInfo.h"
 
-struct InventoryItem {
-    ItemType itemType;
-    int quantity;
-    
-    InventoryItem() : itemType{0, "Unknown", 0, 0, 0, 0}, quantity(0) {}
-    InventoryItem(ItemType t, int q) : itemType(t), quantity(q) {}
-};
+
 
 struct Agent {
     int id;
@@ -35,6 +29,9 @@ struct Agent {
     Point housePos = { -1, -1 };
     bool isBuildingHouse = false;
     Point plotPos = { -1, -1 };
+    
+    bool isBuildingWarehouse = false;
+    bool isDepositing = false;
    
     std::unordered_set<int> ownedStructureIds; // Store the primary keys of the buildings the NPC owns
 
@@ -54,6 +51,13 @@ struct Agent {
     void Work(int& targetX, int& targetY);
     void WanderInSettlement(int& targetX, int& targetY);
     void WanderInWilderness(int& targetX, int& targetY);  // TODO: Implement this
+
+    void FindWarehousePlot(Point& plotPos, int& id);
+    void BuildWarehouse(int& targetX, int& targetY);
+    void DepositInventory();
+    
+    bool isDeliveringToPlot = false;
+    void DeliverToWarehousePlot(int& targetX, int& targetY);
 
     void Update(float deltaTime);
     void Draw(SDL_Renderer* renderer);

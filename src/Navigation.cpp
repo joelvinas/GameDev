@@ -108,7 +108,15 @@ bool isPassable(int x, int y, int agentId) {
     // Check WorldObjects first
     WorldObject* obj = GetObjectAt(x, y);
     if (obj != nullptr) {
-        if (obj->type == HOUSE || obj->type == STORAGE || obj->type == WALL) {
+        if (obj->type == STORAGE) {
+            // The Warehouse is owned by the settlement, so any valid agent can enter
+            if (agentId != -1) {
+                return true;
+            }
+            return false;
+        }
+
+        if (obj->type == HOUSE || obj->type == WALL) {
             if (agentId != -1) {
                 for (const auto& agent : EntityManager::npcs) {
                     if (agent.id == agentId) {

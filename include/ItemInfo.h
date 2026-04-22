@@ -12,6 +12,14 @@ struct ItemType {
     int maxStack; // Maximum stack size for this item type
 };
 
+struct InventoryItem {
+    ItemType itemType;
+    int quantity;
+    
+    InventoryItem() : itemType{0, "Unknown", 0, 0, 0, 0}, quantity(0) {}
+    InventoryItem(ItemType t, int q) : itemType(t), quantity(q) {}
+};
+
 struct Item {
     int id;
     std::string name; // Allows for custom names (e.g., "Sword of Doom") while typeID references the base item type (e.g., "Sword")
